@@ -3,14 +3,47 @@ import test from "node:test";
 
 import { evaluateLeadEligibility } from "./eligibility.js";
 
-test("rejects the observed self-drive false positive", () => {
+test("accepts an explicit self-drive rental request", () => {
   const result = evaluateLeadEligibility(
     "Lf Van for rent po yung pwede po sana sa self drive 22-24 po irerent QC loc po."
   );
 
   assert.deepEqual(result, {
-    eligible: false,
-    reason: "explicit_self_drive"
+    eligible: true,
+    reason: "explicit_rental_buyer_intent"
+  });
+});
+
+test("accepts the supplied multiweek self-drive lead", () => {
+  const result = evaluateLeadEligibility(
+    [
+      "Looking for",
+      "-5 seater sedan",
+      "-self drive",
+      "-approx 2-3 weeks rental",
+      "-Cavite/Las Piñas area"
+    ].join("\n")
+  );
+
+  assert.deepEqual(result, {
+    eligible: true,
+    reason: "explicit_rental_buyer_intent"
+  });
+});
+
+test("accepts the supplied lead when its opening phrase is missing", () => {
+  const result = evaluateLeadEligibility(
+    [
+      "-5 seater sedan",
+      "-self drive",
+      "-approx 2-3 weeks rental",
+      "-Cavite/Las Piñas area"
+    ].join("\n")
+  );
+
+  assert.deepEqual(result, {
+    eligible: true,
+    reason: "rental_context_candidate"
   });
 });
 
@@ -36,14 +69,14 @@ test("accepts a vehicle price inquiry without driver wording", () => {
   });
 });
 
-test("rejects an either-self-drive-or-with-driver request", () => {
+test("accepts a request allowing self-drive or with-driver options", () => {
   const result = evaluateLeadEligibility(
     "LF van, self drive or with driver is okay."
   );
 
   assert.deepEqual(result, {
-    eligible: false,
-    reason: "explicit_self_drive"
+    eligible: true,
+    reason: "explicit_rental_buyer_intent"
   });
 });
 

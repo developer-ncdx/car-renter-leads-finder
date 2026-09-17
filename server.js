@@ -22,13 +22,12 @@ date, or duration can support buyer intent.
 Return false for:
 - vehicle owners/operators advertising units, rates, promos, or availability
 - "for rent", "accepting bookings", or "PM for rates" supplier posts
-- all self-drive requests, including posts that accept either option
 - people looking for passengers, carpools, drivers to hire, jobs, or vehicles
   for sale
 - news, discussions, old stories, or ambiguous posts without buyer intent
 
-An omitted driver preference can still be a lead.
-An explicit self-drive request is always false, even if a vehicle is requested.
+Driver preference can be with-driver, self-drive, or omitted; all three can be
+leads when the author has explicit rental buyer intent.
 `.trim();
 
 function envValue(name) {
@@ -273,6 +272,14 @@ function truncate(value, maxLength) {
   return `${value.slice(0, maxLength - 1).trimEnd()}…`;
 }
 
+function logTextPreview(value) {
+  const normalized = String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return JSON.stringify(truncate(normalized, 240));
+}
+
 async function parseErrorResponse(response) {
   const fallback = `${response.status} ${response.statusText}`.trim();
 
@@ -322,7 +329,7 @@ async function sendTelegramMessage(text) {
 function formatLeadMessage(payload) {
   const title = config.bypassLlm
     ? "🧪 <b>New Facebook Post (LLM bypassed)</b>"
-    : "🚨 <b>New Car-with-Driver Lead!</b>";
+    : "🚨 <b>New Car Rental Lead!</b>";
   const author = escapeHtml(payload.authorName);
   const postText = escapeHtml(truncate(payload.postText, 3_000));
   const postUrl = escapeHtml(payload.postUrl);
@@ -433,7 +440,8 @@ async function processLead(payload) {
     if (!eligibility.eligible) {
       console.info(
         `[lead] Rejected by rule=${eligibility.reason} ` +
-        `group=${payload.groupId} post=${payload.postId}`
+        `group=${payload.groupId} post=${payload.postId} ` +
+        `text=${logTextPreview(payload.postText)}`
       );
 
       return {
@@ -451,7 +459,8 @@ async function processLead(payload) {
 
   if (!isLead) {
     console.info(
-      `[lead] Rejected by GPT group=${payload.groupId} post=${payload.postId}`
+      `[lead] Rejected by GPT group=${payload.groupId} ` +
+      `post=${payload.postId} text=${logTextPreview(payload.postText)}`
     );
 
     return {

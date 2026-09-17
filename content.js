@@ -20,20 +20,17 @@
 
   const CONFIG = Object.freeze({
     groupId: activeGroupMatch[1],
-    bootstrapMs: 5000,
     scanThrottleMs: 350,
+    reconciliationScanMs: 5000,
     extractionDelayMs: 700,
     extractionRetryMs: 1000,
     maxExtractionAttempts: 4,
-    topPostLimit: 20,
-    maxWindowScrollY: 1200,
-    viewportSlackFactor: 3,
-    storageKey: `seenPosts:${activeGroupMatch[1]}`,
-    seenTtlMs: 7 * 24 * 60 * 60 * 1000,
-    maxStoredIds: 1000,
+    extractionFailureRetryMs: 30_000,
+    deliveryRetryMs: 10_000,
+    storageKey: `processedPosts:v4:${activeGroupMatch[1]}`,
+    processedTtlMs: 7 * 24 * 60 * 60 * 1000,
+    maxStoredPostIds: 1000,
     persistDebounceMs: 1000,
-    catchUpWindowMs: 15_000,
-    maxCatchUpEmits: 5,
     pillClickMinDelayMs: 3000,
     pillClickMaxDelayMs: 12_000,
     fallbackRefreshMinDelayMs: 60_000,
@@ -55,26 +52,25 @@
     `a[href*="/groups/${CONFIG.groupId}/posts/"], ` +
     `a[href*="/groups/${CONFIG.groupId}/permalink/"]`;
 
-  const seenPostIds = new Map();
+  const processedPostIds = new Map();
   const pendingPostIds = new Set();
   const expandedPostIds = new Set();
-  const catchUpUntil = Date.now() + CONFIG.catchUpWindowMs;
+  const retryNotBefore = new Map();
 
-  let baselineComplete = false;
   let scanTimer = null;
+  let reconciliationTimer = null;
   let lastPillNoticeAt = 0;
   let persistTimer = null;
   let pillClickPending = false;
-  let catchUpEmits = 0;
   let fallbackRefreshTimer = null;
-  let baselineTimer = null;
   let deliveriesInFlight = 0;
   let lastRelevantFeedActivityAt = Date.now();
   let monitoringEnabled = false;
   let observerStarted = false;
   let observerStartPending = false;
+  let chronologicalRedirectPending = false;
 
-  async function loadSeenPosts() {
+  async function loadProcessedPosts() {
     const stored = await chrome.storage.local.get(CONFIG.storageKey);
     const entries = stored?.[CONFIG.storageKey];
 
@@ -82,18 +78,18 @@
       return false;
     }
 
-    const cutoff = Date.now() - CONFIG.seenTtlMs;
+    const cutoff = Date.now() - CONFIG.processedTtlMs;
 
-    for (const [postId, firstSeenAt] of Object.entries(entries)) {
-      if (typeof firstSeenAt === "number" && firstSeenAt >= cutoff) {
-        seenPostIds.set(postId, firstSeenAt);
+    for (const [postId, processedAt] of Object.entries(entries)) {
+      if (typeof processedAt === "number" && processedAt >= cutoff) {
+        processedPostIds.set(postId, processedAt);
       }
     }
 
-    return seenPostIds.size > 0;
+    return processedPostIds.size > 0;
   }
 
-  function persistSeenPosts() {
+  function persistProcessedPosts() {
     if (persistTimer !== null) {
       return;
     }
@@ -101,10 +97,10 @@
     persistTimer = window.setTimeout(() => {
       persistTimer = null;
 
-      const cutoff = Date.now() - CONFIG.seenTtlMs;
-      const fresh = [...seenPostIds]
-        .filter(([, firstSeenAt]) => firstSeenAt >= cutoff)
-        .slice(-CONFIG.maxStoredIds);
+      const cutoff = Date.now() - CONFIG.processedTtlMs;
+      const fresh = [...processedPostIds]
+        .filter(([, processedAt]) => processedAt >= cutoff)
+        .slice(-CONFIG.maxStoredPostIds);
 
       chrome.storage.local
         .set({ [CONFIG.storageKey]: Object.fromEntries(fresh) })
@@ -116,12 +112,27 @@
     }, CONFIG.persistDebounceMs);
   }
 
-  function markSeen(postId) {
-    if (!seenPostIds.has(postId)) {
-      seenPostIds.set(postId, Date.now());
+  function markProcessed(postId) {
+    if (!processedPostIds.has(postId)) {
+      processedPostIds.set(postId, Date.now());
     }
 
-    persistSeenPosts();
+    retryNotBefore.delete(postId);
+    persistProcessedPosts();
+  }
+
+  function schedulePostRetry(postId, delayMs) {
+    const retryAt = Date.now() + delayMs;
+    retryNotBefore.set(postId, retryAt);
+
+    window.setTimeout(() => {
+      if (retryNotBefore.get(postId) !== retryAt) {
+        return;
+      }
+
+      retryNotBefore.delete(postId);
+      scheduleScan();
+    }, delayMs);
   }
 
   function normalizeInline(value) {
@@ -162,6 +173,33 @@
       monitoringEnabled &&
       GROUP_FEED_ROUTE_PATTERN.test(window.location.pathname)
     );
+  }
+
+  function enforceChronologicalFeed() {
+    if (!isGroupFeedRoute()) {
+      return true;
+    }
+
+    const url = new URL(window.location.href);
+
+    if (
+      url.searchParams.get("sorting_setting")?.toUpperCase() ===
+      "CHRONOLOGICAL"
+    ) {
+      return true;
+    }
+
+    if (chronologicalRedirectPending) {
+      return false;
+    }
+
+    chronologicalRedirectPending = true;
+    url.searchParams.set("sorting_setting", "CHRONOLOGICAL");
+    console.info(
+      `${LOG_PREFIX} Switching this monitored feed to New Posts sorting.`
+    );
+    window.location.replace(url.toString());
+    return false;
   }
 
   function parsePostLink(rawHref) {
@@ -296,19 +334,49 @@
       '[data-ad-comet-preview="message"]',
       '[data-testid="post_message"]'
     ];
+    const directElements = new Set();
 
     for (const selector of directMessageSelectors) {
       for (const element of container.querySelectorAll(selector)) {
-        if (!belongsToPostContainer(element, container)) {
-          continue;
-        }
-
-        const text = normalizeMultiline(element.innerText || element.textContent);
-
-        if (text && text !== authorName) {
-          return text;
+        if (belongsToPostContainer(element, container)) {
+          directElements.add(element);
         }
       }
+    }
+
+    const directTexts = [...directElements]
+      .sort((left, right) => {
+        if (
+          left.compareDocumentPosition(right) &
+          Node.DOCUMENT_POSITION_FOLLOWING
+        ) {
+          return -1;
+        }
+
+        return 1;
+      })
+      .map((element) =>
+        normalizeMultiline(element.innerText || element.textContent)
+      )
+      .filter((text) => text && text !== authorName);
+    const completeDirectTexts = [];
+
+    for (const text of directTexts) {
+      if (completeDirectTexts.some((current) => current.includes(text))) {
+        continue;
+      }
+
+      for (let index = completeDirectTexts.length - 1; index >= 0; index -= 1) {
+        if (text.includes(completeDirectTexts[index])) {
+          completeDirectTexts.splice(index, 1);
+        }
+      }
+
+      completeDirectTexts.push(text);
+    }
+
+    if (completeDirectTexts.length > 0) {
+      return normalizeMultiline(completeDirectTexts.join("\n"));
     }
 
     const fallbackCandidates = [];
@@ -436,19 +504,28 @@
         const runtimeError = chrome.runtime.lastError;
 
         if (runtimeError) {
+          pendingPostIds.delete(payload.postId);
+          schedulePostRetry(payload.postId, CONFIG.deliveryRetryMs);
           console.error(
-            `${LOG_PREFIX} Local bridge unavailable: ${runtimeError.message}`
+            `${LOG_PREFIX} Local bridge unavailable; post ` +
+            `${payload.postId} will be retried: ${runtimeError.message}`
           );
           return;
         }
 
         if (!response?.ok) {
+          pendingPostIds.delete(payload.postId);
+          schedulePostRetry(payload.postId, CONFIG.deliveryRetryMs);
           console.error(
-            `${LOG_PREFIX} Lead delivery failed: ` +
+            `${LOG_PREFIX} Lead delivery failed; post ${payload.postId} ` +
+            "will be retried: " +
             `${response?.error || "unknown error"}`
           );
           return;
         }
+
+        pendingPostIds.delete(payload.postId);
+        markProcessed(payload.postId);
 
         if (response.duplicate) {
           console.info(
@@ -470,7 +547,7 @@
 
   function queueExtraction(candidate) {
     if (
-      seenPostIds.has(candidate.postId) ||
+      processedPostIds.has(candidate.postId) ||
       pendingPostIds.has(candidate.postId)
     ) {
       return;
@@ -507,8 +584,6 @@
         : null;
 
       if (payload) {
-        pendingPostIds.delete(candidate.postId);
-        markSeen(candidate.postId);
         emitNewPost(payload);
         return;
       }
@@ -519,72 +594,41 @@
       }
 
       pendingPostIds.delete(candidate.postId);
-      markSeen(candidate.postId);
+      schedulePostRetry(
+        candidate.postId,
+        CONFIG.extractionFailureRetryMs
+      );
       console.warn(
-        `${LOG_PREFIX} Skipped post ${candidate.postId}; ` +
-        "its text was not available after repeated extraction attempts."
+        `${LOG_PREFIX} Could not extract post ${candidate.postId}; ` +
+        "it remains unprocessed and will be retried."
       );
     };
 
     window.setTimeout(attemptExtraction, CONFIG.extractionDelayMs);
   }
 
-  function isCandidateNearFeedTop(candidate, position) {
-    if (
-      position >= CONFIG.topPostLimit ||
-      window.scrollY > CONFIG.maxWindowScrollY
-    ) {
-      return false;
-    }
-
-    const container = findPostContainer(candidate.anchor);
-
-    if (!container) {
-      return false;
-    }
-
-    const bounds = container.getBoundingClientRect();
-
-    return (
-      bounds.bottom >= 0 &&
-      bounds.top <= window.innerHeight * CONFIG.viewportSlackFactor
-    );
-  }
-
   function scanForPosts() {
-    if (!isTargetGroupRoute()) {
+    if (!isTargetGroupRoute() || !enforceChronologicalFeed()) {
       return;
     }
 
-    collectPostCandidates().forEach((candidate, position) => {
+    const now = Date.now();
+
+    collectPostCandidates().forEach((candidate) => {
       if (
-        seenPostIds.has(candidate.postId) ||
+        processedPostIds.has(candidate.postId) ||
         pendingPostIds.has(candidate.postId)
       ) {
         return;
       }
 
-      if (!baselineComplete) {
-        markSeen(candidate.postId);
+      const retryAt = retryNotBefore.get(candidate.postId);
+
+      if (retryAt && retryAt > now) {
         return;
       }
 
-      if (!isCandidateNearFeedTop(candidate, position)) {
-        // Posts far down the feed are virtualized history, not new arrivals.
-        markSeen(candidate.postId);
-        return;
-      }
-
-      // Limit the initial catch-up so a long absence cannot flood Telegram.
-      if (Date.now() < catchUpUntil) {
-        if (catchUpEmits >= CONFIG.maxCatchUpEmits) {
-          markSeen(candidate.postId);
-          return;
-        }
-
-        catchUpEmits += 1;
-      }
-
+      retryNotBefore.delete(candidate.postId);
       queueExtraction(candidate);
     });
   }
@@ -598,6 +642,26 @@
       scanTimer = null;
       scanForPosts();
     }, CONFIG.scanThrottleMs);
+  }
+
+  function startReconciliationScan() {
+    if (reconciliationTimer !== null || !isTargetGroupRoute()) {
+      return;
+    }
+
+    reconciliationTimer = window.setInterval(
+      scanForPosts,
+      CONFIG.reconciliationScanMs
+    );
+  }
+
+  function stopReconciliationScan() {
+    if (reconciliationTimer === null) {
+      return;
+    }
+
+    window.clearInterval(reconciliationTimer);
+    reconciliationTimer = null;
   }
 
   function isNewPostsPill(element) {
@@ -650,8 +714,7 @@
   function clickNewPostsPill(pill) {
     if (
       !isTargetGroupRoute() ||
-      pillClickPending ||
-      !baselineComplete
+      pillClickPending
     ) {
       return;
     }
@@ -748,32 +811,11 @@
 
   function logReady() {
     console.info(
-      `${LOG_PREFIX} Ready. Keep this group tab sorted by New Posts ` +
-      "and near the top of the feed."
+      `${LOG_PREFIX} Ready. Every unseen post loaded in this monitored ` +
+      "tab will be sent for eligibility checking."
     );
+    startReconciliationScan();
     scheduleFallbackRefresh();
-  }
-
-  function scheduleBaselineCompletion() {
-    if (
-      baselineComplete ||
-      baselineTimer !== null ||
-      !isTargetGroupRoute()
-    ) {
-      return;
-    }
-
-    baselineTimer = window.setTimeout(() => {
-      baselineTimer = null;
-
-      if (!isTargetGroupRoute()) {
-        return;
-      }
-
-      scanForPosts();
-      baselineComplete = true;
-      logReady();
-    }, CONFIG.bootstrapMs);
   }
 
   function startObserver(hasStoredHistory) {
@@ -784,16 +826,13 @@
     observerStarted = true;
 
     if (hasStoredHistory) {
-      baselineComplete = true;
       console.info(
-        `${LOG_PREFIX} Restored ${seenPostIds.size} known posts. ` +
-        "Skipping the baseline so posts missed while away are still sent."
+        `${LOG_PREFIX} Restored ${processedPostIds.size} processed post IDs.`
       );
     } else {
       console.info(
-        `${LOG_PREFIX} First run for this group: starting a ` +
-        `${CONFIG.bootstrapMs / 1000}-second baseline. ` +
-        "Posts already on screen will not be emitted."
+        `${LOG_PREFIX} No processed-post history was found; scanning every ` +
+        "post currently loaded by Facebook."
       );
     }
 
@@ -828,19 +867,14 @@
       attributeFilter: ["href"]
     });
 
-    if (baselineComplete) {
-      logReady();
-      return;
-    }
-
-    scheduleBaselineCompletion();
+    logReady();
   }
 
   async function start() {
     let hasStoredHistory = false;
 
     try {
-      hasStoredHistory = await loadSeenPosts();
+      hasStoredHistory = await loadProcessedPosts();
     } catch (error) {
       console.warn(
         `${LOG_PREFIX} Could not read stored post history: ${error.message}`
@@ -866,10 +900,7 @@
           fallbackRefreshTimer = null;
         }
 
-        if (baselineTimer !== null) {
-          window.clearTimeout(baselineTimer);
-          baselineTimer = null;
-        }
+        stopReconciliationScan();
 
         console.info(
           `${LOG_PREFIX} Monitoring disabled for group ${CONFIG.groupId}.`
@@ -890,18 +921,17 @@
 
     monitoringEnabled = true;
 
+    if (!enforceChronologicalFeed()) {
+      return;
+    }
+
     if (observerStarted) {
       console.info(
         `${LOG_PREFIX} Monitoring resumed for group ${CONFIG.groupId}.`
       );
-
-      if (baselineComplete) {
-        scheduleScan();
-        scheduleFallbackRefresh();
-      } else {
-        scheduleBaselineCompletion();
-      }
-
+      scheduleScan();
+      startReconciliationScan();
+      scheduleFallbackRefresh();
       return;
     }
 

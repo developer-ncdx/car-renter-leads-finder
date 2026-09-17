@@ -79,10 +79,12 @@ versions before 0.6.0 are added automatically during the upgrade.
 ### 6. Open monitored Facebook tabs
 
 1. Open one authenticated tab per configured Facebook group.
-2. Sort every group by **New Posts**.
-3. Leave each tab near the top of its feed.
-4. Add Facebook to the browser's **Never put these sites to sleep** list.
-5. Reload each group tab once after installing or updating the extension.
+2. Leave each group open in its own tab.
+3. Add Facebook to the browser's **Never put these sites to sleep** list.
+4. Reload each group tab once after installing or updating the extension.
+
+The extension automatically switches monitored group feeds to **New Posts** so
+Facebook's selected relevance filter cannot hide chronological arrivals.
 
 Open the tab's DevTools Console and look for:
 
@@ -96,11 +98,11 @@ after 60–120 seconds.
 
 ### 7. Verify filtering
 
-With filtering enabled, explicit buyer requests for a vehicle are eligible even
-when the author does not say "with driver." The local rules still reject
-explicit self-drive requests, competitor advertisements, passenger searches,
-driver jobs, and posts without buyer intent. GPT performs the final intent
-check.
+With filtering enabled, explicit buyer requests for a vehicle are eligible
+whether they request self-drive, with-driver service, or do not state a driver
+preference. The local rules still reject competitor advertisements, passenger
+searches, driver jobs, and posts without buyer intent. GPT performs the final
+intent check.
 
 Run the regression suite:
 
@@ -125,13 +127,12 @@ Facebook content script
 2. Select the **Console** panel.
 3. Filter for `Live Car Rental Lead Observer`.
 
-On the first run for a group, the extension runs a five-second baseline. Posts
-already on screen are recorded as seen and are not emitted. That history is
-saved to `chrome.storage.local` for seven days, so later reloads skip the
-baseline and report how many posts were restored. The console should then show:
+At startup, the extension restores post IDs previously acknowledged by the
+local service and scans every other post currently loaded in the page. The
+console should then show:
 
 ```text
-[Live Car Rental Lead Observer] Ready. Keep this group tab sorted by New Posts and near the top of the feed.
+[Live Car Rental Lead Observer] Ready. Every unseen post loaded in this monitored tab will be sent for eligibility checking.
 ```
 
 When Facebook inserts a new post, the console logs a `NEW_POST` payload:
@@ -163,31 +164,36 @@ user is typing on the page. Persistent post history prevents duplicate alerts.
 
 ## Detection safeguards
 
-- Uses the post ID as the deduplication key, stored for seven days.
+- Uses the post ID as the deduplication key, stored for seven days only after
+  the local service acknowledges processing.
 - Converts links to a canonical URL without tracking parameters.
-- Treats posts loaded farther down while scrolling as old content.
+- Scans every unseen post loaded in the page, regardless of its position.
+- Reconciles the loaded page every five seconds in addition to observing live
+  DOM changes.
+- Combines Facebook message fragments before classification and accepts strong
+  vehicle-rental context when an opening phrase is missing.
+- Retries posts when extraction or local-service delivery fails.
+- Automatically enforces chronological **New Posts** sorting.
 - Never tries to reveal an anonymous poster's real identity.
-- Does not emit posts already visible during the first run for a group.
-- Sends at most five posts in the first fifteen seconds after a page load, so a
-  long absence cannot flood Telegram.
 - Waits a randomized delay before clicking, avoiding a fixed machine cadence.
 - Uses the 60-to-120-second refresh only as a fallback when the live feed has
   shown no recent activity.
 
-Keep the tab near the top of the feed. Facebook virtualizes feed content, so
-scrolling far down is intentionally excluded from new-post detection.
+Facebook can only be scanned for posts it actually loads into the tab. The
+chronological sort and fallback refresh maximize coverage, but posts hidden by
+Facebook's servers are not present in the DOM and cannot be observed.
 
 ## Troubleshooting
 
 - **No startup logs:** Reload the group tab after loading or updating the
   extension and confirm the group appears in the extension popup.
-- **No output for existing posts:** This is expected; on the first run for a
-  group the initial posts form the baseline.
+- **Existing posts are processed after an update:** Version 0.6.3 starts a new
+  acknowledged-post history so posts silently skipped by older versions are
+  scanned once.
 - **A New posts button appears:** The extension clicks it within 12 seconds. If
-  it does not, confirm the console logged `Ready` first, since the click is
-  suppressed during the baseline.
+  it does not, confirm the console logged `Ready`.
 - **Testing with a second device:** Post from the phone while the desktop tab
-  already shows `Ready`, and do not refresh the desktop tab.
+  already shows `Ready`.
 - **Local bridge unavailable:** Start `npm start`, confirm port `8787` is free,
   and then reload the extension and Facebook tab.
 - **Notification delivery fails:** Confirm the private notification credentials
@@ -209,11 +215,11 @@ Keep OpenAI and Telegram tokens in the local service environment. Do not
 put secrets in this extension because extension source is readable in Chrome.
 Rotate any Telegram token that has appeared in a screenshot before using it.
 
-Before calling GPT, a deterministic gate rejects explicit self-drive requests,
-passenger or driver searches, provider advertisements, and posts without
-explicit buyer intent. Driver wording is optional. This prevents clear false
-positives and avoids unnecessary API cost. GPT performs the final intent check
-only for candidates that pass those rules.
+Before calling GPT, a deterministic gate rejects passenger or driver searches,
+provider advertisements, and posts without buyer or vehicle-rental context.
+Driver preference is optional and self-drive requests are eligible. This
+prevents clear false positives and avoids unnecessary API cost. GPT performs
+the final intent check only for candidates that pass those rules.
 
 Run the guardrail regression tests with:
 

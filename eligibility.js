@@ -1,9 +1,3 @@
-const SELF_DRIVE_PATTERN =
-  /\bself[\s-]*drive\b|\bwithout\s+(?:a\s+)?driver\b|\bno\s+driver\b|\bwalang\s+driver\b/i;
-
-const NEGATED_SELF_DRIVE_PATTERN =
-  /\b(?:not|no|hindi|ayaw|ayoko(?:\s+ng)?|huwag|wag)\b.{0,24}\bself[\s-]*drive\b/i;
-
 const NON_RENTER_PATTERN =
   /\b(?:looking\s+for|lf|need(?:ed)?)\s+(?:\d+\s+)?(?:passengers?|joiners?)\b|\b(?:passengers?|joiners?)\s+(?:needed|wanted)\b|\b(?:hiring|looking\s+for|lf)\s+(?:a\s+)?drivers?\b|\bdriver\s+(?:hiring|job|applicant)\b/i;
 
@@ -31,6 +25,14 @@ const BUYER_INTENT_PATTERN = new RegExp(
   "i"
 );
 
+const RENTAL_CONTEXT_PATTERN = new RegExp(
+  [
+    String.raw`\b${VEHICLE_PATTERN_SOURCE}\b.{0,160}\b(?:rent(?:al|ed|ing)?|self[\s-]*drive|with\s+(?:a\s+)?driver|chauffeur)\b`,
+    String.raw`\b(?:rent(?:al|ed|ing)?|self[\s-]*drive|with\s+(?:a\s+)?driver|chauffeur)\b.{0,160}\b${VEHICLE_PATTERN_SOURCE}\b`
+  ].join("|"),
+  "i"
+);
+
 export function evaluateLeadEligibility(postText) {
   const text = String(postText ?? "")
     .replace(/\u00a0/g, " ")
@@ -41,17 +43,6 @@ export function evaluateLeadEligibility(postText) {
     return {
       eligible: false,
       reason: "empty_post_text"
-    };
-  }
-
-  const requestsSelfDrive =
-    SELF_DRIVE_PATTERN.test(text) &&
-    !NEGATED_SELF_DRIVE_PATTERN.test(text);
-
-  if (requestsSelfDrive) {
-    return {
-      eligible: false,
-      reason: "explicit_self_drive"
     };
   }
 
@@ -69,7 +60,10 @@ export function evaluateLeadEligibility(postText) {
     };
   }
 
-  if (!BUYER_INTENT_PATTERN.test(text)) {
+  const hasExplicitBuyerIntent = BUYER_INTENT_PATTERN.test(text);
+  const hasRentalContext = RENTAL_CONTEXT_PATTERN.test(text);
+
+  if (!hasExplicitBuyerIntent && !hasRentalContext) {
     return {
       eligible: false,
       reason: "no_explicit_buyer_intent"
@@ -78,6 +72,8 @@ export function evaluateLeadEligibility(postText) {
 
   return {
     eligible: true,
-    reason: "explicit_rental_buyer_intent"
+    reason: hasExplicitBuyerIntent
+      ? "explicit_rental_buyer_intent"
+      : "rental_context_candidate"
   };
 }
