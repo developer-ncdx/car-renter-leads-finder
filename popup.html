@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Monitored Facebook Groups</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main>
+      <header>
+        <p class="eyebrow">Lead Observer</p>
+        <h1>Facebook groups</h1>
+        <p class="intro">Add the groups that this browser should monitor.</p>
+      </header>
+
+      <form id="group-form" novalidate>
+        <label for="group-url">Group URL</label>
+        <div class="input-row">
+          <input
+            id="group-url"
+            name="groupUrl"
+            type="url"
+            inputmode="url"
+            autocomplete="off"
+            spellcheck="false"
+            maxlength="500"
+            placeholder="https://www.facebook.com/groups/..."
+            required
+          >
+          <button id="add-group" class="primary" type="submit">Add</button>
+        </div>
+        <p id="status" class="status" role="status" aria-live="polite"></p>
+      </form>
+
+      <section aria-labelledby="groups-heading">
+        <div class="section-heading">
+          <h2 id="groups-heading">Monitored groups</h2>
+          <span id="group-count" class="count" aria-label="0 groups">0</span>
+        </div>
+        <ul id="group-list" aria-live="polite"></ul>
+        <p id="empty-state" class="empty-state" hidden>
+          No groups added yet.
+        </p>
+      </section>
+
+      <footer>
+        Keep each group open in its own tab and sorted by New Posts.
+      </footer>
+    </main>
+
+    <template id="group-item-template">
+      <li class="group-item">
+        <a class="group-link" target="_blank" rel="noreferrer">
+          <span class="group-label"></span>
+          <span class="group-url"></span>
+        </a>
+        <button class="remove-group" type="button">Remove</button>
+      </li>
+    </template>
+
+    <script src="group-config.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

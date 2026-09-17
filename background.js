@@ -1,5 +1,8 @@
+importScripts("group-config.js");
+
 const LOCAL_SERVICE_URL = "http://127.0.0.1:8787";
 const REQUEST_TIMEOUT_MS = 45_000;
+const GroupConfig = globalThis.FbGroupConfig;
 
 async function readResponse(response) {
   const text = await response.text();
@@ -35,20 +38,35 @@ async function forwardLead(payload) {
   return result;
 }
 
+async function handleNewPost(message, sender) {
+  const senderGroupId = GroupConfig.parseGroupId(sender.tab?.url);
+  const payloadGroupId = String(message.payload?.groupId ?? "");
+
+  if (!senderGroupId || senderGroupId !== payloadGroupId) {
+    return {
+      ok: false,
+      error: "Rejected message from an unexpected Facebook group page"
+    };
+  }
+
+  const monitoredGroupIds = await GroupConfig.loadGroupIds();
+
+  if (!monitoredGroupIds.includes(senderGroupId)) {
+    return {
+      ok: false,
+      error: `Facebook group ${senderGroupId} is not in the monitored list`
+    };
+  }
+
+  return forwardLead(message.payload);
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type !== "NEW_POST") {
     return false;
   }
 
-  if (!sender.tab?.url?.startsWith("https://www.facebook.com/groups/")) {
-    sendResponse({
-      ok: false,
-      error: "Rejected message from an unexpected page"
-    });
-    return false;
-  }
-
-  forwardLead(message.payload)
+  handleNewPost(message, sender)
     .then((result) => {
       sendResponse(result);
     })
@@ -63,6 +81,44 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
-console.info(
-  `[Lead Bridge] Ready; forwarding posts to ${LOCAL_SERVICE_URL}/leads`
-);
+async function initialize() {
+  try {
+    const groupIds = await GroupConfig.loadGroupIds();
+    console.info(
+      `[Lead Bridge] Ready with ${groupIds.length} monitored ` +
+      `${groupIds.length === 1 ? "group" : "groups"}; forwarding posts to ` +
+      `${LOCAL_SERVICE_URL}/leads`
+    );
+  } catch (error) {
+    console.error(
+      `[Lead Bridge] Could not initialize monitored groups: ${error.message}`
+    );
+  }
+}
+
+async function initializeInstalledGroups(details) {
+  const stored = await chrome.storage.local.get(GroupConfig.STORAGE_KEY);
+
+  if (!Array.isArray(stored[GroupConfig.STORAGE_KEY])) {
+    const isLegacyUpgrade =
+      details.reason === "update" &&
+      /^0\.[0-5]\./.test(details.previousVersion ?? "");
+    const initialGroupIds = isLegacyUpgrade
+      ? GroupConfig.LEGACY_GROUP_IDS
+      : [];
+
+    await GroupConfig.saveGroupIds(initialGroupIds);
+  }
+
+  await initialize();
+}
+
+chrome.runtime.onInstalled.addListener((details) => {
+  initializeInstalledGroups(details).catch((error) => {
+    console.error(
+      `[Lead Bridge] Could not migrate monitored groups: ${error.message}`
+    );
+  });
+});
+
+initialize();

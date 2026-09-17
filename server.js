@@ -10,14 +10,14 @@ const SYSTEM_PROMPT = `
 You classify Facebook posts for a car-rental operator in the Philippines.
 
 Return is_lead=true only when the post author is actively looking to rent or
-hire a car, van, SUV, MPV, or similar road vehicle WITH A DRIVER for their own
-current or upcoming trip.
+hire a car, van, SUV, MPV, or similar road vehicle for their own current or
+upcoming trip. The author does not need to explicitly say "with driver".
 
 Understand English, Filipino, and Taglish. Buyer phrases can include "LF",
 "looking for", "need", "hanap", "naghahanap", "kailangan", "may available
-ba", "mauupahan", or a request for recommendations. Driver phrases can include
-"with driver", "w/ driver", "may driver", "kasama driver", "driver included",
-or "chauffeur".
+ba", "mauupahan", a request for recommendations, or a price/quote question
+such as "magkano" or "how much". Trip details such as a vehicle type, route,
+date, or duration can support buyer intent.
 
 Return false for:
 - vehicle owners/operators advertising units, rates, promos, or availability
@@ -27,7 +27,7 @@ Return false for:
   for sale
 - news, discussions, old stories, or ambiguous posts without buyer intent
 
-Do not infer a driver requirement when it is not stated.
+An omitted driver preference can still be a lead.
 An explicit self-drive request is always false, even if a vehicle is requested.
 `.trim();
 

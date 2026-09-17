@@ -14,14 +14,25 @@ test("rejects the observed self-drive false positive", () => {
   });
 });
 
-test("rejects posts without an explicit driver requirement", () => {
+test("accepts an explicit rental request without driver wording", () => {
   const result = evaluateLeadEligibility(
     "Looking for a 7-seater car rental tomorrow in Taguig."
   );
 
   assert.deepEqual(result, {
-    eligible: false,
-    reason: "no_explicit_driver_requirement"
+    eligible: true,
+    reason: "explicit_rental_buyer_intent"
+  });
+});
+
+test("accepts a vehicle price inquiry without driver wording", () => {
+  const result = evaluateLeadEligibility(
+    "Mgkano po kaya 7 seaters 4d3n Manila to Calatagan Batangas para nextweek po"
+  );
+
+  assert.deepEqual(result, {
+    eligible: true,
+    reason: "explicit_rental_buyer_intent"
   });
 });
 
@@ -60,7 +71,7 @@ test("accepts explicit rejection of self-drive when a driver is requested", () =
 
   assert.deepEqual(result, {
     eligible: true,
-    reason: "explicit_buyer_with_driver"
+    reason: "explicit_rental_buyer_intent"
   });
 });
 
@@ -94,5 +105,16 @@ test("rejects an advertisement framed as a buyer question", () => {
   assert.deepEqual(result, {
     eligible: false,
     reason: "provider_advertisement"
+  });
+});
+
+test("rejects a vehicle mention without buyer intent", () => {
+  const result = evaluateLeadEligibility(
+    "Saw a nice seven-seater vehicle in Taguig yesterday."
+  );
+
+  assert.deepEqual(result, {
+    eligible: false,
+    reason: "no_explicit_buyer_intent"
   });
 });

@@ -1,9 +1,9 @@
 # Real-Time Car Rental Lead Finder
 
 Local pipeline that monitors allowlisted Facebook group tabs, filters for
-people actively looking to rent a vehicle with a driver, and sends qualified
-leads to Telegram. It uses live DOM updates first and a conservative randomized
-refresh when Facebook does not update a tab.
+people actively looking to rent a vehicle, and sends qualified leads to
+Telegram. It uses live DOM updates first and a conservative randomized refresh
+when Facebook does not update a tab.
 
 ## Prerequisites
 
@@ -39,21 +39,7 @@ template. Keep all real values local and never commit, paste, or screenshot
 them. The bypass option may be used briefly for a notification connection
 test, but disable it before normal use so unqualified posts are filtered.
 
-### 3. Configure Facebook groups
-
-Open `manifest.json` and add one URL pattern for each group:
-
-```json
-"matches": [
-  "https://www.facebook.com/groups/GROUP_ID*",
-  "https://www.facebook.com/groups/ANOTHER_GROUP_ID*"
-]
-```
-
-Use only the numeric group ID. Keep the final `*` so base, sorting, and post
-URLs match.
-
-### 4. Start the local notifier
+### 3. Start the local notifier
 
 ```bash
 npm start
@@ -68,7 +54,7 @@ To verify Telegram while the server remains open, use a second terminal:
 npm run test:alert
 ```
 
-### 5. Load the unpacked extension
+### 4. Load the unpacked extension
 
 1. Open `chrome://extensions` or `edge://extensions`.
 2. Enable **Developer mode**.
@@ -78,6 +64,17 @@ npm run test:alert
 
 An **Inactive** service worker is normal. Chromium wakes it whenever the
 Facebook content script sends a post.
+
+### 5. Add Facebook groups
+
+1. Click the extension icon in the browser toolbar.
+2. Paste a Facebook group URL containing a numeric group ID.
+3. Click **Add**.
+4. Repeat for every group that should be monitored.
+
+The popup lists all monitored groups as clickable links with **Remove**
+buttons. Group settings are saved locally in the browser. Existing groups from
+versions before 0.6.0 are added automatically during the upgrade.
 
 ### 6. Open monitored Facebook tabs
 
@@ -99,10 +96,11 @@ after 60–120 seconds.
 
 ### 7. Verify filtering
 
-With filtering enabled, only explicit buyer requests for a vehicle with a
-driver are eligible. The local rules reject self-drive requests, competitor
-advertisements, passenger searches, driver jobs, and posts that do not
-explicitly request a driver. GPT performs the final intent check.
+With filtering enabled, explicit buyer requests for a vehicle are eligible even
+when the author does not say "with driver." The local rules still reject
+explicit self-drive requests, competitor advertisements, passenger searches,
+driver jobs, and posts without buyer intent. GPT performs the final intent
+check.
 
 Run the regression suite:
 
@@ -182,7 +180,7 @@ scrolling far down is intentionally excluded from new-post detection.
 ## Troubleshooting
 
 - **No startup logs:** Reload the group tab after loading or updating the
-  extension and confirm the URL contains the configured group ID.
+  extension and confirm the group appears in the extension popup.
 - **No output for existing posts:** This is expected; on the first run for a
   group the initial posts form the baseline.
 - **A New posts button appears:** The extension clicks it within 12 seconds. If
@@ -212,10 +210,10 @@ put secrets in this extension because extension source is readable in Chrome.
 Rotate any Telegram token that has appeared in a screenshot before using it.
 
 Before calling GPT, a deterministic gate rejects explicit self-drive requests,
-posts without a driver requirement, passenger or driver searches, provider
-advertisements, and posts without explicit buyer intent. This prevents clear
-false positives and avoids unnecessary API cost. GPT performs the final intent
-check only for candidates that pass those rules.
+passenger or driver searches, provider advertisements, and posts without
+explicit buyer intent. Driver wording is optional. This prevents clear false
+positives and avoids unnecessary API cost. GPT performs the final intent check
+only for candidates that pass those rules.
 
 Run the guardrail regression tests with:
 

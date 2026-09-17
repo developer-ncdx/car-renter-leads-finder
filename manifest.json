@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Live Car Rental Lead Observer",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "description": "Detects new Facebook group posts and forwards qualified leads to a local notifier.",
   "permissions": [
     "storage"
@@ -12,14 +12,16 @@
   "background": {
     "service_worker": "background.js"
   },
+  "action": {
+    "default_title": "Manage monitored Facebook groups",
+    "default_popup": "popup.html"
+  },
   "content_scripts": [
     {
       "matches": [
-        "https://www.facebook.com/groups/341298636779740*",
-        "https://www.facebook.com/groups/749875689751332*",
-        "https://www.facebook.com/groups/1404224761913202*"
+        "https://www.facebook.com/groups/*"
       ],
-      "js": ["content.js"],
+      "js": ["group-config.js", "content.js"],
       "run_at": "document_idle"
     }
   ]

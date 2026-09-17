@@ -9,6 +9,15 @@
     return;
   }
 
+  const GroupConfig = globalThis.FbGroupConfig;
+
+  if (!GroupConfig) {
+    console.error(
+      "[Live Car Rental Lead Observer] Group configuration failed to load."
+    );
+    return;
+  }
+
   const CONFIG = Object.freeze({
     groupId: activeGroupMatch[1],
     bootstrapMs: 5000,
@@ -58,8 +67,12 @@
   let pillClickPending = false;
   let catchUpEmits = 0;
   let fallbackRefreshTimer = null;
+  let baselineTimer = null;
   let deliveriesInFlight = 0;
   let lastRelevantFeedActivityAt = Date.now();
+  let monitoringEnabled = false;
+  let observerStarted = false;
+  let observerStartPending = false;
 
   async function loadSeenPosts() {
     const stored = await chrome.storage.local.get(CONFIG.storageKey);
@@ -138,11 +151,17 @@
   }
 
   function isTargetGroupRoute() {
-    return TARGET_ROUTE_PATTERN.test(window.location.pathname);
+    return (
+      monitoringEnabled &&
+      TARGET_ROUTE_PATTERN.test(window.location.pathname)
+    );
   }
 
   function isGroupFeedRoute() {
-    return GROUP_FEED_ROUTE_PATTERN.test(window.location.pathname);
+    return (
+      monitoringEnabled &&
+      GROUP_FEED_ROUTE_PATTERN.test(window.location.pathname)
+    );
   }
 
   function parsePostLink(rawHref) {
@@ -461,6 +480,11 @@
     let attempts = 0;
 
     const attemptExtraction = () => {
+      if (!isTargetGroupRoute()) {
+        pendingPostIds.delete(candidate.postId);
+        return;
+      }
+
       attempts += 1;
 
       const currentCandidate = findCandidateByPostId(candidate.postId);
@@ -624,7 +648,11 @@
   }
 
   function clickNewPostsPill(pill) {
-    if (pillClickPending || !baselineComplete) {
+    if (
+      !isTargetGroupRoute() ||
+      pillClickPending ||
+      !baselineComplete
+    ) {
       return;
     }
 
@@ -726,10 +754,34 @@
     scheduleFallbackRefresh();
   }
 
+  function scheduleBaselineCompletion() {
+    if (
+      baselineComplete ||
+      baselineTimer !== null ||
+      !isTargetGroupRoute()
+    ) {
+      return;
+    }
+
+    baselineTimer = window.setTimeout(() => {
+      baselineTimer = null;
+
+      if (!isTargetGroupRoute()) {
+        return;
+      }
+
+      scanForPosts();
+      baselineComplete = true;
+      logReady();
+    }, CONFIG.bootstrapMs);
+  }
+
   function startObserver(hasStoredHistory) {
     if (!isTargetGroupRoute()) {
       return;
     }
+
+    observerStarted = true;
 
     if (hasStoredHistory) {
       baselineComplete = true;
@@ -781,11 +833,7 @@
       return;
     }
 
-    window.setTimeout(() => {
-      scanForPosts();
-      baselineComplete = true;
-      logReady();
-    }, CONFIG.bootstrapMs);
+    scheduleBaselineCompletion();
   }
 
   async function start() {
@@ -799,8 +847,97 @@
       );
     }
 
+    if (!monitoringEnabled) {
+      return;
+    }
+
     startObserver(hasStoredHistory);
   }
 
-  start();
+  function applyMonitoringState(groupIds) {
+    const shouldMonitor = groupIds.includes(CONFIG.groupId);
+
+    if (!shouldMonitor) {
+      if (monitoringEnabled) {
+        monitoringEnabled = false;
+
+        if (fallbackRefreshTimer !== null) {
+          window.clearTimeout(fallbackRefreshTimer);
+          fallbackRefreshTimer = null;
+        }
+
+        if (baselineTimer !== null) {
+          window.clearTimeout(baselineTimer);
+          baselineTimer = null;
+        }
+
+        console.info(
+          `${LOG_PREFIX} Monitoring disabled for group ${CONFIG.groupId}.`
+        );
+      } else if (!observerStarted) {
+        console.info(
+          `${LOG_PREFIX} Group ${CONFIG.groupId} is not monitored. ` +
+          "Add it from the extension popup."
+        );
+      }
+
+      return;
+    }
+
+    if (monitoringEnabled) {
+      return;
+    }
+
+    monitoringEnabled = true;
+
+    if (observerStarted) {
+      console.info(
+        `${LOG_PREFIX} Monitoring resumed for group ${CONFIG.groupId}.`
+      );
+
+      if (baselineComplete) {
+        scheduleScan();
+        scheduleFallbackRefresh();
+      } else {
+        scheduleBaselineCompletion();
+      }
+
+      return;
+    }
+
+    if (observerStartPending) {
+      return;
+    }
+
+    observerStartPending = true;
+    start()
+      .catch((error) => {
+        console.error(
+          `${LOG_PREFIX} Could not start monitoring: ${error.message}`
+        );
+      })
+      .finally(() => {
+        observerStartPending = false;
+      });
+  }
+
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    const groupChange = changes[GroupConfig.STORAGE_KEY];
+
+    if (areaName !== "local" || !groupChange) {
+      return;
+    }
+
+    applyMonitoringState(
+      GroupConfig.normalizeGroupIds(groupChange.newValue)
+    );
+  });
+
+  GroupConfig.loadGroupIds()
+    .then(applyMonitoringState)
+    .catch((error) => {
+      console.error(
+        `${LOG_PREFIX} Could not load monitored groups: ${error.message}`
+      );
+    });
 })();
