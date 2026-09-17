@@ -11,7 +11,7 @@ refresh when Facebook does not update a tab.
 - Node.js 20.6 or newer
 - Chrome, Edge, or another Chromium browser
 - An authenticated Facebook account with access to the configured groups
-- A Telegram bot added to the destination group
+- Private credentials for the notification destination
 - An OpenAI API key when GPT filtering is enabled
 
 Do not automate Facebook login. Use an existing authenticated browser profile.
@@ -28,42 +28,18 @@ cd car-renter-leads-finder
 If you already have this folder locally, open a terminal in the project instead.
 There are currently no third-party npm packages to install.
 
-### 2. Create the Telegram bot
-
-1. Open the verified `@BotFather` account in Telegram.
-2. Run `/newbot` and follow the prompts.
-3. Add the newly created bot—not BotFather—to the Telegram group.
-4. Send `/start@YOUR_BOT_USERNAME` in that group.
-5. Request
-   `GET https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates`.
-6. Copy the negative `message.chat.id` for the target Telegram group.
-
-Never share the bot token or include it in screenshots. Revoke it immediately
-through BotFather if it is exposed.
-
-### 3. Configure local environment variables
+### 2. Configure local environment variables
 
 ```bash
 cp .env.example .env.local
 ```
 
-Edit `.env.local`:
+Complete the required entries in `.env.local` using `.env.example` as the
+template. Keep all real values local and never commit, paste, or screenshot
+them. The bypass option may be used briefly for a notification connection
+test, but disable it before normal use so unqualified posts are filtered.
 
-```env
-SERVER_HOST=127.0.0.1
-SERVER_PORT=8787
-TELEGRAM_BOT_TOKEN=your_rotated_bot_token
-TELEGRAM_CHAT_ID=-1001234567890
-BYPASS_LLM=false
-OPENAI_API_KEY=your_openai_api_key
-OPENAI_MODEL=gpt-5-nano
-```
-
-For a Telegram-only connection test, use `BYPASS_LLM=true`; the OpenAI key can
-remain empty. Set it back to `false` before normal use, otherwise every detected
-post is forwarded.
-
-### 4. Configure Facebook groups
+### 3. Configure Facebook groups
 
 Open `manifest.json` and add one URL pattern for each group:
 
@@ -77,17 +53,14 @@ Open `manifest.json` and add one URL pattern for each group:
 Use only the numeric group ID. Keep the final `*` so base, sorting, and post
 URLs match.
 
-### 5. Start the local notifier
+### 4. Start the local notifier
 
 ```bash
 npm start
 ```
 
-Keep this terminal running. A successful startup looks like:
-
-```text
-[server] Listening on http://127.0.0.1:8787 (BYPASS_LLM=false)
-```
+Keep this terminal running and confirm that the service reports a successful
+local startup.
 
 To verify Telegram while the server remains open, use a second terminal:
 
@@ -95,7 +68,7 @@ To verify Telegram while the server remains open, use a second terminal:
 npm run test:alert
 ```
 
-### 6. Load the unpacked extension
+### 5. Load the unpacked extension
 
 1. Open `chrome://extensions` or `edge://extensions`.
 2. Enable **Developer mode**.
@@ -106,7 +79,7 @@ npm run test:alert
 An **Inactive** service worker is normal. Chromium wakes it whenever the
 Facebook content script sends a post.
 
-### 7. Open monitored Facebook tabs
+### 6. Open monitored Facebook tabs
 
 1. Open one authenticated tab per configured Facebook group.
 2. Sort every group by **New Posts**.
@@ -124,9 +97,9 @@ The extension automatically clicks Facebook's **New posts** button. If
 Facebook provides no live update, each tab uses a staggered fallback refresh
 after 60–120 seconds.
 
-### 8. Verify filtering
+### 7. Verify filtering
 
-With `BYPASS_LLM=false`, only explicit buyer requests for a vehicle with a
+With filtering enabled, only explicit buyer requests for a vehicle with a
 driver are eligible. The local rules reject self-drive requests, competitor
 advertisements, passenger searches, driver jobs, and posts that do not
 explicitly request a driver. GPT performs the final intent check.
@@ -177,7 +150,7 @@ When Facebook inserts a new post, the console logs a `NEW_POST` payload:
 }
 ```
 
-With `BYPASS_LLM=true`, every detected new post is sent to Telegram with a
+With bypass testing enabled, every detected new post is sent to Telegram with a
 test-mode heading. Use this mode briefly in an active group.
 
 Facebook usually holds new posts behind a **New posts** button rather than
@@ -219,8 +192,8 @@ scrolling far down is intentionally excluded from new-post detection.
   already shows `Ready`, and do not refresh the desktop tab.
 - **Local bridge unavailable:** Start `npm start`, confirm port `8787` is free,
   and then reload the extension and Facebook tab.
-- **Telegram rejects the message:** Confirm the bot is still in the group and
-  that the token and negative chat ID in `.env.local` are current.
+- **Notification delivery fails:** Confirm the private notification credentials
+  and destination settings are current.
 - **A new post is skipped:** Facebook may have changed its DOM. Inspect the
   post card for its `/groups/<GROUP_ID>/posts/<POST_ID>/` link and message
   container.
@@ -229,10 +202,9 @@ scrolling far down is intentionally excluded from new-post detection.
 
 After Telegram-only testing succeeds:
 
-1. Add an OpenAI API key to `OPENAI_API_KEY`.
-2. Set `OPENAI_MODEL` to an available fast GPT model. The example uses
-   `gpt-5-nano` for low-cost classification.
-3. Change `BYPASS_LLM=false`.
+1. Add an OpenAI API key to the private local environment file.
+2. Select an available low-cost GPT classification model.
+3. Disable bypass testing.
 4. Restart the local service.
 
 Keep OpenAI and Telegram tokens in the local service environment. Do not
