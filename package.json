@@ -1,0 +1,17 @@
+{
+  "name": "fb-group-lead-sniper",
+  "version": "0.5.3",
+  "private": true,
+  "type": "module",
+  "description": "Local Facebook group observer and Telegram lead notifier.",
+  "scripts": {
+    "start": "node --env-file=.env.local server.js",
+    "dev": "node --watch --env-file=.env.local server.js",
+    "test:alert": "node --env-file=.env.local test-alert.js",
+    "test": "node --test eligibility.test.js",
+    "check": "node --check server.js && node --check eligibility.js && node --check eligibility.test.js && node --check background.js && node --check content.js && node --check test-alert.js && node --check ecosystem.config.cjs"
+  },
+  "engines": {
+    "node": ">=20.6.0"
+  }
+}
