@@ -27,6 +27,12 @@ opening phrase is abbreviated or missing.
 Return false for:
 - vehicle owners/operators advertising units, rates, promos, or availability
 - "for rent", "accepting bookings", or "PM for rates" supplier posts
+- posts listing model years, starting rates, services, renter requirements,
+  everyday availability, or instructions to DM for booking
+- past-client testimonials, successful-booking posts, delivered-unit updates,
+  and recurring daily/weekly/monthly rental packages
+- promotional vehicle listings saying "available now", "book early", "secure
+  your date", "why you'll love", "with us", "serving you", or "promo"
 - people looking for passengers, carpools, drivers to hire, jobs, or vehicles
   for sale
 - news, discussions, old stories, or ambiguous posts without buyer intent

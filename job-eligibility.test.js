@@ -33,7 +33,8 @@ test("accepts common role abbreviations and Bubble variants", () => {
     "Now hiring: AI Engr, remote role.",
     "SWE job opening — applications are open.",
     "Need a dev for Bubble.io for a part-time project.",
-    "Hiring LLM developer. Apply today."
+    "Hiring LLM developer. Apply today.",
+    "𝐖𝐄 𝐀𝐑𝐄 𝐇𝐈𝐑𝐈𝐍𝐆: 𝐀𝐈 𝐄𝐍𝐆𝐈𝐍𝐄𝐄𝐑"
   ];
 
   for (const example of examples) {

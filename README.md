@@ -105,12 +105,19 @@ after 60–120 seconds.
 With filtering enabled, explicit buyer requests for a vehicle are eligible
 whether they request self-drive, with-driver service, or do not state a driver
 preference. The local rules still reject competitor advertisements, passenger
-searches, driver jobs, and posts without buyer intent. GPT performs the final
-intent check. Common English, Filipino, and Taglish shorthand is supported,
+searches, driver jobs, and posts without buyer intent. Rate lists, booking
+instructions, everyday availability, owner-driver ads, and renter-requirement
+lists are treated as provider advertisements. Past-client testimonials,
+delivered-unit updates, discount offers, and recurring rental packages are
+also rejected. Promotional copy such as **available now**, **book early**,
+**secure your date**, and **serving you** contributes to provider detection.
+GPT performs the final intent check. Common English, Filipino, and Taglish
+shorthand is supported,
 including `LF`, `L/F`, `LF4`, `LFR`, `ISO`, `HM`, `H/M`, `LP`, `qte`,
 `paquote`, `reco`, `avail`, `rnt`, `s/d`, `w/ drv`, and common misspellings.
-Vehicle, route, and duration context also lets GPT review unfamiliar wording
-instead of rejecting it immediately.
+Decorative Unicode lettering is normalized before filtering. Vehicle, route,
+and duration context also lets GPT review unfamiliar wording instead of
+rejecting it immediately.
 
 Job groups accept genuine hiring, contract, and freelance posts for AI
 engineers, Bubble.io developers, software developers, AI-agent or agentic

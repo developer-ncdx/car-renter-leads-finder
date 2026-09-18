@@ -183,6 +183,143 @@ test("rejects an advertisement framed as a buyer question", () => {
   });
 });
 
+test("rejects the supplied provider advertisement", () => {
+  const result = evaluateLeadEligibility(
+    [
+      "Arat na guys sa next destination.",
+      "Car Rental",
+      "VIOS & STAR GAZER",
+      "2024 Latest Model",
+      "Automatic Transmission",
+      "4 TO-8 seaters",
+      "Self drive or w/ Driver",
+      "Owner Driver",
+      "Rates Starts at 1200",
+      "Lowest & Affordable Rates",
+      "Rates excludes fuel, toll and parking fee",
+      "2 valid Government IDs",
+      "Proof of Billing with complete address",
+      "Accept advance booking",
+      "Available everyday",
+      "DM for booking",
+      "Angeles City, Pampanga"
+    ].join("\n")
+  );
+
+  assert.deepEqual(result, {
+    eligible: false,
+    reason: "provider_advertisement"
+  });
+});
+
+test("rejects a provider ad written with decorative Unicode text", () => {
+  const result = evaluateLeadEligibility(
+    [
+      "𝐖𝐄 𝐒𝐓𝐈𝐋𝐋 𝐇𝐀𝐕𝐄 𝐀𝐕𝐀𝐈𝐋𝐀𝐁𝐋𝐄 𝐔𝐍𝐈𝐓𝐒 𝐅𝐎𝐑 𝐓𝐇𝐈𝐒 𝐖𝐄𝐄𝐊𝐄𝐍𝐃! 𝐁𝐎𝐎𝐊 𝐍𝐎𝐖!",
+      "PRIMO AND PEARL ARE AVAILABLE FOR RENT!",
+      "Car Rental",
+      "Available for:",
+      "Daily Rental",
+      "Weekly Rental",
+      "Monthly Rental",
+      "Peak season slots are limited — reserve yours now!",
+      "Wag kana mahiya! PM NA!"
+    ].join("\n")
+  );
+
+  assert.deepEqual(result, {
+    eligible: false,
+    reason: "provider_advertisement"
+  });
+});
+
+test("rejects the supplied repeat-client provider advertisement", () => {
+  const result = evaluateLeadEligibility(
+    [
+      "Price starts @ 999",
+      "Special Discount for OFW's and Balikbayans",
+      "BACK-TO-BACK REPEAT CLIENT!",
+      "Thank you, Sir Kiko, for trusting Preemo Car Rental Service once again!",
+      "Unit Delivered to Sto. Rosario, Angeles City",
+      "Booked for 24hrs",
+      "Enjoy our EXCLUSIVE DISCOUNTS for:",
+      "Daily Rentals",
+      "Weekly Rentals",
+      "Monthly Rentals",
+      "Send DM to check our available rates and units."
+    ].join("\n")
+  );
+
+  assert.deepEqual(result, {
+    eligible: false,
+    reason: "provider_advertisement"
+  });
+});
+
+test("rejects the supplied promotional vehicle advertisement", () => {
+  const result = evaluateLeadEligibility(
+    [
+      "AVAILABLE NOW! MITSUBISHI XPANDER GLS 2026 | QUARTZ PEARL WHITE",
+      "your sleek, stylish, and super comfy ride!",
+      "Ready to roll whenever you need! book early to secure your date!",
+      "WHY YOU’LL LOVE RIDING WITH US:",
+      "Spacious 7-seater — fits your whole family or group",
+      "SUPER COLD AIRCON",
+      "Well-maintained, sanitized, and always ready to serve!",
+      "Ideal for family outings, road trips, weddings, birthdays, airport transfers",
+      "Promos for renting more than one day",
+      "Just let us know.",
+      "Looking forward to serving you and being your go-to ride for your future plans!"
+    ].join("\n")
+  );
+
+  assert.deepEqual(result, {
+    eligible: false,
+    reason: "provider_advertisement"
+  });
+});
+
+test("rejects combined provider booking and rate signals", () => {
+  const examples = [
+    "Vios rates start at 1200. DM for booking.",
+    "Owner driver. Available everyday. Accept advance booking.",
+    "Self drive or with driver. Requirements: 2 valid government IDs and proof of billing."
+  ];
+
+  for (const example of examples) {
+    assert.deepEqual(
+      evaluateLeadEligibility(example),
+      {
+        eligible: false,
+        reason: "provider_advertisement"
+      },
+      example
+    );
+  }
+});
+
+test("does not reject a buyer for one ambiguous booking phrase", () => {
+  assert.deepEqual(
+    evaluateLeadEligibility(
+      "Do you accept advance booking for a Vios tomorrow?"
+    ),
+    {
+      eligible: true,
+      reason: "rental_context_candidate"
+    }
+  );
+});
+
+test("accepts buyer intent written with decorative Unicode text", () => {
+  assert.deepEqual(
+    evaluateLeadEligibility("𝐋𝐅 𝐕𝐢𝐨𝐬 tomorrow for 12 hours"),
+    {
+      eligible: true,
+      reason: "explicit_rental_buyer_intent"
+    }
+  );
+});
+
 test("rejects a vehicle mention without buyer intent", () => {
   const result = evaluateLeadEligibility(
     "Saw a nice seven-seater vehicle in Taguig yesterday."

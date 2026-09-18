@@ -12,6 +12,7 @@ const SERVICE_OR_TRAINING_PATTERN =
 
 export function evaluateJobEligibility(postText) {
   const text = String(postText ?? "")
+    .normalize("NFKC")
     .replace(/\u00a0/g, " ")
     .replace(/\s+/g, " ")
     .trim();

@@ -2,7 +2,35 @@ const NON_RENTER_PATTERN =
   /\b(?:looking\s+for|lf|need(?:ed)?)\s+(?:\d+\s+)?(?:passengers?|joiners?)\b|\b(?:passengers?|joiners?)\s+(?:needed|wanted)\b|\b(?:hiring|looking\s+for|lf)\s+(?:a\s+)?drivers?\b|\bdriver\s+(?:hiring|job|applicant)\b/i;
 
 const PROVIDER_OFFER_PATTERN =
-  /\bour\s+(?:fleet|units?|cars?|vehicles?|rates?|services?)\b|\bwe\s+(?:offer|provide|accept|have\s+available)\b|\b(?:accepting|open\s+for)\s+(?:advance\s+)?bookings?\b|\b(?:book|reserve)\s+now\b|\bfor\s+(?:reservations?|inquiries)(?:\s+or\s+(?:reservations?|inquiries))?\b|\b(?:text|call)(?:\s+or\s+(?:text|call))?\s+for\s+(?:bookings?|reservations?|inquiries)\b|\b(?:send|message|contact|pm)\s+us\b|\bwhy\s+choose\s+us\b|\bdriver'?s\s+fee\b|\b(?:daily|weekly|monthly|hourly)\s+rates?\b|\blowest\s+(?:car\s+rental\s+)?rates?\b|\bbooking\s+slots?\b|\bavailable\s+on\s+(?:whatsapp|viber|telegram)\b|\b(?:rent|book)\s+with\s+us\b/i;
+  /\bour\s+(?:fleet|units?|cars?|vehicles?|rates?|services?)\b|\bwe\s+(?:offer|provide|accept|have\s+available)\b|\bwe\s+(?:still\s+)?have\s+(?:available\s+)?units?\b|\b(?:accepting|open\s+for)\s+(?:advance\s+)?bookings?\b|\b(?:book|reserve)\s+now\b|\b(?:reserve|secure)\s+(?:yours?|your\s+(?:ride|unit|slot))\s+now\b|\bfor\s+(?:reservations?|inquiries)(?:\s+or\s+(?:reservations?|inquiries))?\b|\b(?:text|call)(?:\s+or\s+(?:text|call))?\s+for\s+(?:bookings?|reservations?|inquiries)\b|\b(?:send|message|contact|pm)\s+us\b|\bwhy\s+choose\s+us\b|\bdriver'?s\s+fee\b|\b(?:daily|weekly|monthly|hourly)\s+rates?\b|\blowest\s+(?:car\s+rental\s+)?rates?\b|\bbooking\s+slots?\b|\bavailable\s+on\s+(?:whatsapp|viber|telegram)\b|\b(?:rent|book)\s+with\s+us\b/i;
+
+const PROVIDER_AD_SIGNAL_PATTERNS = Object.freeze([
+  /\b(?:accept|accepts|accepting|taking)\s+(?:advance\s+)?bookings?\b/i,
+  /\b(?:dm|pm|message|contact)\s+(?:(?:me|us)\s+)?for\s+(?:bookings?|reservations?|rates?|details?|inquiries)\b/i,
+  /\b(?:rates?|prices?)\s+(?:start|starts|starting)\s+(?:at|from|@)\s+(?:₱|php|p)?\s*\d/i,
+  /\blowest\b.{0,40}\b(?:rates?|prices?)\b/i,
+  /\bavailable\s+(?:every\s*day|everyday|daily|24\s*\/?\s*7)\b/i,
+  /\b(?:owner[\s-]*driver|legit\s+(?:and|&)\s+trusted\s+driver)\b/i,
+  /\bvalid\s+government\s+ids?\b/i,
+  /\b(?:proof\s+of\s+billing|selfie\s+with\s+id)\b/i,
+  /\brates?\s+excludes?\s+(?:fuel|tolls?|parking)\b/i,
+  /\bavailable\s+units?\b|\bunits?\s+(?:are\s+)?available\b/i,
+  /\bavailable\s+for\s+(?:daily|weekly|monthly)\s+rentals?\b/i,
+  /\b(?:daily|weekly|monthly)\s+rentals?\b/i,
+  /\b(?:pm|dm)\s+(?:na|now)\b/i,
+  /\b(?:special|exclusive|repeat-client|long[\s-]*term)\s+discounts?\b/i,
+  /\b(?:unit|vehicle|car)\s+(?:was\s+)?delivered\b|\bbooked\s+for\s+\d+\s*(?:h|hrs?|hours?)\b/i,
+  /\bthank\s+you\b.{0,100}\b(?:trusting|choosing)\b.{0,100}\b(?:rental|service)\b/i,
+  /\bsend\s+(?:a\s+)?(?:dm|pm)\s+to\s+(?:check|ask|see)\b/i,
+  /\bour\s+available\s+(?:rates?|units?)(?:\s+and\s+(?:rates?|units?))?\b/i,
+  /\bavailable\s+(?:now|today|this\s+(?:week|weekend|month))\b/i,
+  /\bbook\s+(?:early|ahead|in\s+advance)\b|\bsecure\s+your\s+(?:date|slot|booking|ride)\b/i,
+  /\bwhy\s+you(?:['’]ll|\s+will)\s+love\b|\b(?:ride|rent|book)\s+with\s+us\b/i,
+  /\b(?:ready|happy)\s+to\s+serve\b|\bserving\s+you\b|\bgo-to\s+ride\b/i,
+  /\b(?:promos?|discounts?)\s+for\s+(?:renting|booking)\b/i,
+  /\b(?:well[\s-]*maintained|sanitized|cold\s+aircon|fuel[\s-]*efficient)\b/i,
+  /\bjust\s+(?:let\s+us\s+know|message\s+us|pm\s+us)\b/i
+]);
 
 const VEHICLE_PATTERN_SOURCE =
   String.raw`(?:cars?|kots?e|koche|autos?|vans?|suvs?|mpvs?|auvs?|uvs?|sedans?|vehicles?|sasakyans?|saskyan|transport(?:ation)?|pick[\s-]*ups?|mini[\s-]*vans?|coasters?|buses?|jeeps?|(?:[2-9]|[1-5]\d)[\s-]*(?:seaters?|str|s)|innova|avanza|vios|ertiga|xpander|fortuner|hi[\s-]*ace|grandia|commuter|urvan|nv[\s-]*350|starex|montero|everest|terra|mirage|wigo|raize|rush|br[\s-]*v|cr[\s-]*v|almera|honda[\s-]*city|l[\s-]*300|apv|revo|adventure|crosswind|jimny|hilux|navara|ranger)`;
@@ -59,6 +87,7 @@ const RENTAL_CONTEXT_PATTERN = new RegExp(
 
 export function evaluateLeadEligibility(postText) {
   const text = String(postText ?? "")
+    .normalize("NFKC")
     .replace(/\u00a0/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -84,7 +113,14 @@ export function evaluateLeadEligibility(postText) {
     };
   }
 
-  if (PROVIDER_OFFER_PATTERN.test(text)) {
+  const providerAdSignalCount = PROVIDER_AD_SIGNAL_PATTERNS
+    .filter((pattern) => pattern.test(text))
+    .length;
+
+  if (
+    PROVIDER_OFFER_PATTERN.test(text) ||
+    providerAdSignalCount >= 2
+  ) {
     return {
       eligible: false,
       reason: "provider_advertisement"
