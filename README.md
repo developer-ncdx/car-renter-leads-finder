@@ -70,7 +70,8 @@ Facebook content script sends a post.
 ### 5. Add Facebook groups
 
 1. Click the extension icon in the browser toolbar.
-2. Paste a Facebook group URL containing a numeric group ID.
+2. Paste a Facebook group URL containing either a numeric ID or a custom
+   group name, such as `/groups/ITJobsPilipinas/`.
 3. Select **Car rental** or **Job posts**.
 4. Click **Add**.
 5. Repeat for every group that should be monitored.

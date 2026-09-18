@@ -121,7 +121,7 @@
 
     if (!groupId) {
       setStatus(
-        "Enter a Facebook group URL containing a numeric group ID.",
+        "Enter a Facebook group URL with a numeric ID or custom group name.",
         "error"
       );
       input.focus();

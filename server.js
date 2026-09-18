@@ -247,15 +247,21 @@ function validateLeadPayload(value) {
     throw new HttpError(400, "Lead payload must be an object");
   }
 
-  const groupId = sanitizeString(value.groupId, "groupId", 32);
+  const groupId = sanitizeString(value.groupId, "groupId", 100);
   const postId = sanitizeString(value.postId, "postId", 32);
   const authorName = sanitizeString(value.authorName, "authorName", 200);
   const postText = sanitizeString(value.postText, "postText", 20_000);
   const postUrl = sanitizeString(value.postUrl, "postUrl", 2_000);
   const leadType = sanitizeString(value.leadType, "leadType", 16);
 
-  if (!/^\d+$/.test(groupId) || !/^\d+$/.test(postId)) {
-    throw new HttpError(400, "groupId and postId must be numeric");
+  if (
+    !/^[a-z0-9][a-z0-9._-]{0,99}$/i.test(groupId) ||
+    !/^\d+$/.test(postId)
+  ) {
+    throw new HttpError(
+      400,
+      "groupId must be numeric or a custom group name; postId must be numeric"
+    );
   }
 
   if (!["rental", "job"].includes(leadType)) {
@@ -275,7 +281,7 @@ function validateLeadPayload(value) {
   if (
     parsedUrl.protocol !== "https:" ||
     parsedUrl.hostname !== "www.facebook.com" ||
-    parsedUrl.pathname !== expectedPath
+    parsedUrl.pathname.toLowerCase() !== expectedPath.toLowerCase()
   ) {
     throw new HttpError(
       400,

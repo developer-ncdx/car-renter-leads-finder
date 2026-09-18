@@ -7,6 +7,18 @@
     RENTAL: "rental",
     JOB: "job"
   });
+  const GROUP_IDENTIFIER_PATTERN = /^[a-z0-9][a-z0-9._-]{0,99}$/i;
+  const RESERVED_GROUP_ROUTES = new Set([
+    "admin",
+    "browse",
+    "create",
+    "discover",
+    "feed",
+    "joins",
+    "notifications",
+    "search",
+    "your_groups"
+  ]);
   const LEGACY_GROUP_IDS = Object.freeze([
     "341298636779740",
     "749875689751332",
@@ -33,9 +45,10 @@
     const groupsById = new Map();
 
     for (const value of values) {
-      const id = typeof value === "object" && value !== null
+      const requestedId = typeof value === "object" && value !== null
         ? String(value.id ?? value.groupId ?? "").trim()
         : String(value ?? "").trim();
+      const id = normalizeGroupIdentifier(requestedId);
       const requestedType = typeof value === "object" && value !== null
         ? String(value.type ?? "").trim().toLowerCase()
         : GROUP_TYPES.RENTAL;
@@ -43,12 +56,27 @@
         ? requestedType
         : GROUP_TYPES.RENTAL;
 
-      if (/^\d+$/.test(id)) {
+      if (id) {
         groupsById.set(id, { id, type });
       }
     }
 
     return [...groupsById.values()];
+  }
+
+  function normalizeGroupIdentifier(value) {
+    const identifier = String(value ?? "").trim();
+
+    if (
+      !GROUP_IDENTIFIER_PATTERN.test(identifier) ||
+      RESERVED_GROUP_ROUTES.has(identifier.toLowerCase())
+    ) {
+      return null;
+    }
+
+    return /^\d+$/.test(identifier)
+      ? identifier
+      : identifier.toLowerCase();
   }
 
   function parseGroupId(value) {
@@ -77,14 +105,23 @@
         return null;
       }
 
-      return url.pathname.match(/^\/groups\/(\d+)(?:\/|$)/)?.[1] ?? null;
+      const encodedIdentifier =
+        url.pathname.match(/^\/groups\/([^/]+)(?:\/|$)/)?.[1];
+
+      if (!encodedIdentifier) {
+        return null;
+      }
+
+      return normalizeGroupIdentifier(
+        decodeURIComponent(encodedIdentifier)
+      );
     } catch {
       return null;
     }
   }
 
   function canonicalGroupUrl(groupId) {
-    return `https://www.facebook.com/groups/${groupId}/`;
+    return `https://www.facebook.com/groups/${encodeURIComponent(groupId)}/`;
   }
 
   async function saveGroups(values) {

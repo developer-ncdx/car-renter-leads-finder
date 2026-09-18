@@ -1,14 +1,6 @@
 (() => {
   "use strict";
 
-  const activeGroupMatch = window.location.pathname.match(
-    /^\/groups\/(\d+)(?:\/|$)/
-  );
-
-  if (!activeGroupMatch) {
-    return;
-  }
-
   const GroupConfig = globalThis.FbGroupConfig;
   const PostFreshness = globalThis.FbPostFreshness;
 
@@ -19,8 +11,14 @@
     return;
   }
 
+  const activeGroupId = GroupConfig.parseGroupId(window.location.href);
+
+  if (!activeGroupId) {
+    return;
+  }
+
   const CONFIG = Object.freeze({
-    groupId: activeGroupMatch[1],
+    groupId: activeGroupId,
     scanThrottleMs: 350,
     reconciliationScanMs: 5000,
     extractionDelayMs: 700,
@@ -42,18 +40,25 @@
   });
 
   const LOG_PREFIX = "[Live Facebook Lead Observer]";
+  const escapedGroupId = CONFIG.groupId.replace(
+    /[.*+?^${}()|[\]\\]/g,
+    "\\$&"
+  );
   const TARGET_ROUTE_PATTERN = new RegExp(
-    `^/groups/${CONFIG.groupId}(?:/|$)`
+    `^/groups/${escapedGroupId}(?:/|$)`,
+    "i"
   );
   const GROUP_FEED_ROUTE_PATTERN = new RegExp(
-    `^/groups/${CONFIG.groupId}/?$`
+    `^/groups/${escapedGroupId}/?$`,
+    "i"
   );
   const POST_ROUTE_PATTERN = new RegExp(
-    `^/groups/${CONFIG.groupId}/(?:posts|permalink)/(\\d+)(?:/|$)`
+    `^/groups/${escapedGroupId}/(?:posts|permalink)/(\\d+)(?:/|$)`,
+    "i"
   );
   const POST_LINK_SELECTOR =
-    `a[href*="/groups/${CONFIG.groupId}/posts/"], ` +
-    `a[href*="/groups/${CONFIG.groupId}/permalink/"]`;
+    'a[href*="/groups/"][href*="/posts/"], ' +
+    'a[href*="/groups/"][href*="/permalink/"]';
 
   const processedPostIds = new Map();
   const pendingPostIds = new Set();
