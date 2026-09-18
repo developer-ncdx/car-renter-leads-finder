@@ -1,7 +1,10 @@
 import http from "node:http";
 
 import { evaluateLeadEligibility } from "./eligibility.js";
-import { evaluateJobEligibility } from "./job-eligibility.js";
+import {
+  evaluateJobEligibility,
+  hasDirectTargetedHiringIntent
+} from "./job-eligibility.js";
 
 const MAX_BODY_BYTES = 64 * 1024;
 const DEDUPE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -33,6 +36,8 @@ Return false for:
   and recurring daily/weekly/monthly rental packages
 - promotional vehicle listings saying "available now", "book early", "secure
   your date", "why you'll love", "with us", "serving you", or "promo"
+- seller profiles listing multiple vehicle models, business phone numbers,
+  promotional hashtags, professional drivers, or free delivery
 - people looking for passengers, carpools, drivers to hire, jobs, or vehicles
   for sale
 - news, discussions, old stories, or ambiguous posts without buyer intent
@@ -58,12 +63,18 @@ one of these roles:
 Understand English, Filipino, Taglish, abbreviations such as AI, ML, LLM, SWE,
 SDE, dev, and engr, and common misspellings.
 
+Short hiring captions are valid even without company, salary, location, or
+application details. For example, "Looking for software engineer", "Need AI
+engineer", and "Hiring Bubble developer" are true. Interpret "looking for
+<target role>" as an employer/client seeking that worker unless the text says
+the author is looking for a job, work, clients, or an opportunity for themself.
+
 Return false for:
 - candidates looking for work, sharing a resume, or advertising themselves
 - agencies or freelancers advertising development or automation services
 - courses, bootcamps, webinars, tutorials, and certifications
 - general discussions, advice, news, memes, or unrelated job openings
-- vague posts without a genuine hiring, contract, or freelance opportunity
+- vague posts that contain neither a targeted role nor hiring intent
 `.trim();
 
 function envValue(name) {
@@ -516,6 +527,10 @@ async function processLead(payload) {
   const eligibility = isJob
     ? evaluateJobEligibility(payload.postText)
     : evaluateLeadEligibility(payload.postText);
+  const isDirectJobOpening =
+    isJob &&
+    eligibility.eligible &&
+    hasDirectTargetedHiringIntent(payload.postText);
 
   if (!config.bypassLlm) {
     if (!eligibility.eligible) {
@@ -534,12 +549,19 @@ async function processLead(payload) {
     }
   }
 
-  const isLead = config.bypassLlm
+  const isLead = config.bypassLlm || isDirectJobOpening
     ? true
     : await classifyLead(
       payload.postText,
       isJob ? JOB_SYSTEM_PROMPT : RENTAL_SYSTEM_PROMPT
     );
+
+  if (!config.bypassLlm && isDirectJobOpening) {
+    console.info(
+      `[job] Accepted by explicit hiring rule group=${payload.groupId} ` +
+      `post=${payload.postId}`
+    );
+  }
 
   if (!isLead) {
     console.info(

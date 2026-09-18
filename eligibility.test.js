@@ -279,6 +279,32 @@ test("rejects the supplied promotional vehicle advertisement", () => {
   });
 });
 
+test("rejects the supplied seller-profile advertisement", () => {
+  const result = evaluateLeadEligibility(
+    [
+      "SELFDRIVE OR WITH DRIVER.",
+      "Wherever you're headed — for business, errands, out-of-town trips, weekend getaways, or airport transfers",
+      "Toyota Innova (7-8 SEATER)",
+      "Toyota Avanza",
+      "Honda Mobilio",
+      "Van with Driver Only",
+      "WHY RIDE WITH BUDDYMOTO?",
+      "Self-drive or with professional driver",
+      "Clean & well-maintained units",
+      "Airport transport available",
+      "FREE delivery within Lucena",
+      "0997 556 7447",
+      "Ride with Buddy.",
+      "#BuddymotoCarRentalLucena #LucenaCarRental #QuezonCarRental"
+    ].join("\n")
+  );
+
+  assert.deepEqual(result, {
+    eligible: false,
+    reason: "provider_advertisement"
+  });
+});
+
 test("rejects combined provider booking and rate signals", () => {
   const examples = [
     "Vios rates start at 1200. DM for booking.",
@@ -306,6 +332,18 @@ test("does not reject a buyer for one ambiguous booking phrase", () => {
     {
       eligible: true,
       reason: "rental_context_candidate"
+    }
+  );
+});
+
+test("allows buyer contact details without treating them as an ad", () => {
+  assert.deepEqual(
+    evaluateLeadEligibility(
+      "LF Vios with professional driver tomorrow. Contact 0997 556 7447."
+    ),
+    {
+      eligible: true,
+      reason: "explicit_rental_buyer_intent"
     }
   );
 });

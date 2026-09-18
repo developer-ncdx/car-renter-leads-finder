@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { evaluateJobEligibility } from "./job-eligibility.js";
+import {
+  evaluateJobEligibility,
+  hasDirectTargetedHiringIntent
+} from "./job-eligibility.js";
 
 test("accepts hiring posts for every configured job family", () => {
   const examples = [
@@ -42,12 +45,32 @@ test("accepts common role abbreviations and Bubble variants", () => {
   }
 });
 
+test("treats short targeted hiring captions as explicit", () => {
+  const examples = [
+    "Looking for software engineer",
+    "Looking for software engineer Chlarenz Terrones",
+    "Need AI engineer",
+    "Hiring Bubble developer",
+    "Automation developer needed"
+  ];
+
+  for (const example of examples) {
+    assert.equal(
+      hasDirectTargetedHiringIntent(example),
+      true,
+      example
+    );
+    assert.equal(evaluateJobEligibility(example).eligible, true, example);
+  }
+});
+
 test("rejects job seekers for target roles", () => {
   const examples = [
     "AI engineer open to work. Here is my portfolio.",
     "Hire me as your Bubble developer.",
     "Automation developer available for work.",
-    "Looking for clients as a software developer."
+    "Looking for clients as a software developer.",
+    "Looking for software engineer job."
   ];
 
   for (const example of examples) {

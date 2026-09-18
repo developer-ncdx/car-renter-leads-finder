@@ -4,6 +4,9 @@ const NON_RENTER_PATTERN =
 const PROVIDER_OFFER_PATTERN =
   /\bour\s+(?:fleet|units?|cars?|vehicles?|rates?|services?)\b|\bwe\s+(?:offer|provide|accept|have\s+available)\b|\bwe\s+(?:still\s+)?have\s+(?:available\s+)?units?\b|\b(?:accepting|open\s+for)\s+(?:advance\s+)?bookings?\b|\b(?:book|reserve)\s+now\b|\b(?:reserve|secure)\s+(?:yours?|your\s+(?:ride|unit|slot))\s+now\b|\bfor\s+(?:reservations?|inquiries)(?:\s+or\s+(?:reservations?|inquiries))?\b|\b(?:text|call)(?:\s+or\s+(?:text|call))?\s+for\s+(?:bookings?|reservations?|inquiries)\b|\b(?:send|message|contact|pm)\s+us\b|\bwhy\s+choose\s+us\b|\bdriver'?s\s+fee\b|\b(?:daily|weekly|monthly|hourly)\s+rates?\b|\blowest\s+(?:car\s+rental\s+)?rates?\b|\bbooking\s+slots?\b|\bavailable\s+on\s+(?:whatsapp|viber|telegram)\b|\b(?:rent|book)\s+with\s+us\b/i;
 
+const STRONG_PROVIDER_AD_PATTERN =
+  /\b(?:rates?|prices?)\s+(?:start|starts|starting)\s+(?:at|from|@)\s+(?:₱|php|p)?\s*\d|\b(?:dm|pm|message|contact)\s+(?:(?:me|us)\s+)?for\s+(?:bookings?|reservations?|rates?|details?|inquiries)\b/i;
+
 const PROVIDER_AD_SIGNAL_PATTERNS = Object.freeze([
   /\b(?:accept|accepts|accepting|taking)\s+(?:advance\s+)?bookings?\b/i,
   /\b(?:dm|pm|message|contact)\s+(?:(?:me|us)\s+)?for\s+(?:bookings?|reservations?|rates?|details?|inquiries)\b/i,
@@ -29,11 +32,20 @@ const PROVIDER_AD_SIGNAL_PATTERNS = Object.freeze([
   /\b(?:ready|happy)\s+to\s+serve\b|\bserving\s+you\b|\bgo-to\s+ride\b/i,
   /\b(?:promos?|discounts?)\s+for\s+(?:renting|booking)\b/i,
   /\b(?:well[\s-]*maintained|sanitized|cold\s+aircon|fuel[\s-]*efficient)\b/i,
-  /\bjust\s+(?:let\s+us\s+know|message\s+us|pm\s+us)\b/i
+  /\bjust\s+(?:let\s+us\s+know|message\s+us|pm\s+us)\b/i,
+  /\bwhy\s+(?:ride|rent|book|choose)\s+with\b/i,
+  /\bprofessional\s+drivers?\b/i,
+  /\bfree\s+(?:delivery|pick[\s-]*up|drop[\s-]*off)\b/i,
+  /\b(?:airport\s+transport|transport\s+service)\s+available\b/i,
+  /\b(?:\+?63|0)9\d{2}[\s-]?\d{3}[\s-]?\d{4}\b/i,
+  /(?:#[a-z0-9_]+\s*){2,}/i
 ]);
 
 const VEHICLE_PATTERN_SOURCE =
   String.raw`(?:cars?|kots?e|koche|autos?|vans?|suvs?|mpvs?|auvs?|uvs?|sedans?|vehicles?|sasakyans?|saskyan|transport(?:ation)?|pick[\s-]*ups?|mini[\s-]*vans?|coasters?|buses?|jeeps?|(?:[2-9]|[1-5]\d)[\s-]*(?:seaters?|str|s)|innova|avanza|vios|ertiga|xpander|fortuner|hi[\s-]*ace|grandia|commuter|urvan|nv[\s-]*350|starex|montero|everest|terra|mirage|wigo|raize|rush|br[\s-]*v|cr[\s-]*v|almera|honda[\s-]*city|l[\s-]*300|apv|revo|adventure|crosswind|jimny|hilux|navara|ranger)`;
+
+const VEHICLE_MODEL_NAME_PATTERN =
+  /\b(?:innova|avanza|vios|ertiga|xpander|fortuner|hi[\s-]*ace|grandia|commuter|urvan|nv[\s-]*350|starex|montero|everest|terra|mirage|wigo|raize|rush|br[\s-]*v|cr[\s-]*v|almera|honda[\s-]*city|mobilio|l[\s-]*300|apv|revo|adventure|crosswind|jimny|hilux|navara|ranger)\b/gi;
 
 const SEARCH_INTENT_PATTERN_SOURCE =
   String.raw`(?:l[\s./-]*f(?:\s*4)?|lfr|iso|lookin(?:g)?\s*(?:for|4)|need(?:ed)?|seeking|wanted|hanap|nag[\s-]*hahanap|pa[\s-]*hanap|pahanap|kailangan|kelangan|klangan|gusto(?:\s+ko)?|balak)`;
@@ -113,13 +125,21 @@ export function evaluateLeadEligibility(postText) {
     };
   }
 
+  const hasExplicitBuyerIntent = BUYER_INTENT_PATTERN.test(text);
+  const vehicleModels = new Set(
+    (text.match(VEHICLE_MODEL_NAME_PATTERN) ?? [])
+      .map((value) => value.toLowerCase().replace(/\s+/g, ""))
+  );
   const providerAdSignalCount = PROVIDER_AD_SIGNAL_PATTERNS
     .filter((pattern) => pattern.test(text))
-    .length;
+    .length +
+    Number(vehicleModels.size >= 2);
+  const providerSignalThreshold = hasExplicitBuyerIntent ? 3 : 2;
 
   if (
     PROVIDER_OFFER_PATTERN.test(text) ||
-    providerAdSignalCount >= 2
+    STRONG_PROVIDER_AD_PATTERN.test(text) ||
+    providerAdSignalCount >= providerSignalThreshold
   ) {
     return {
       eligible: false,
@@ -127,7 +147,6 @@ export function evaluateLeadEligibility(postText) {
     };
   }
 
-  const hasExplicitBuyerIntent = BUYER_INTENT_PATTERN.test(text);
   const hasRentalContext = RENTAL_CONTEXT_PATTERN.test(text);
 
   if (!hasExplicitBuyerIntent && !hasRentalContext) {

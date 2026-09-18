@@ -111,8 +111,11 @@ lists are treated as provider advertisements. Past-client testimonials,
 delivered-unit updates, discount offers, and recurring rental packages are
 also rejected. Promotional copy such as **available now**, **book early**,
 **secure your date**, and **serving you** contributes to provider detection.
-GPT performs the final intent check. Common English, Filipino, and Taglish
-shorthand is supported,
+Seller profiles are also recognized from combinations of vehicle lists,
+business phone numbers, promotional hashtags, professional-driver offers, and
+free delivery. Explicit buyer requests require stronger seller evidence before
+being rejected. GPT performs the final intent check. Common English, Filipino,
+and Taglish shorthand is supported,
 including `LF`, `L/F`, `LF4`, `LFR`, `ISO`, `HM`, `H/M`, `LP`, `qte`,
 `paquote`, `reco`, `avail`, `rnt`, `s/d`, `w/ drv`, and common misspellings.
 Decorative Unicode lettering is normalized before filtering. Vehicle, route,
@@ -123,7 +126,9 @@ Job groups accept genuine hiring, contract, and freelance posts for AI
 engineers, Bubble.io developers, software developers, AI-agent or agentic
 developers, AI-assisted developers, AI specialists, and automation engineers
 or developers. Job-seeker posts, courses, and service advertisements are
-rejected.
+rejected. Short explicit captions such as `Looking for software engineer`,
+`Need AI engineer`, and `Hiring Bubble developer` are accepted directly after
+the job-seeker and service-ad guardrails pass.
 
 Run the regression suite:
 
