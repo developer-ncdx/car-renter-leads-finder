@@ -1,6 +1,6 @@
 {
   "name": "fb-group-lead-sniper",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
   "description": "Local Facebook group observer and Telegram lead notifier.",
@@ -9,8 +9,8 @@
     "dev": "node --watch --env-file=.env.local server.js",
     "test:alert": "node --env-file=.env.local test-alert.js",
     "test:job-alert": "node --env-file=.env.local test-alert.js --job",
-    "test": "node --test eligibility.test.js job-eligibility.test.js group-config.test.js",
-    "check": "node --check server.js && node --check eligibility.js && node --check eligibility.test.js && node --check job-eligibility.js && node --check job-eligibility.test.js && node --check group-config.js && node --check group-config.test.js && node --check background.js && node --check content.js && node --check popup.js && node --check test-alert.js && node --check ecosystem.config.cjs"
+    "test": "node --test eligibility.test.js job-eligibility.test.js group-config.test.js post-freshness.test.js",
+    "check": "node --check server.js && node --check eligibility.js && node --check eligibility.test.js && node --check job-eligibility.js && node --check job-eligibility.test.js && node --check group-config.js && node --check group-config.test.js && node --check post-freshness.js && node --check post-freshness.test.js && node --check background.js && node --check content.js && node --check popup.js && node --check test-alert.js && node --check ecosystem.config.cjs"
   },
   "engines": {
     "node": ">=20.6.0"

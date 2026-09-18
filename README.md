@@ -93,7 +93,7 @@ Facebook's selected relevance filter cannot hide chronological arrivals.
 Open the tab's DevTools Console and look for:
 
 ```text
-[Live Car Rental Lead Observer] Ready...
+[Live Facebook Lead Observer] Ready...
 ```
 
 The extension automatically clicks Facebook's **New posts** button. If
@@ -139,14 +139,15 @@ Facebook content script
 
 1. Open Chrome DevTools on the Facebook group tab.
 2. Select the **Console** panel.
-3. Filter for `Live Car Rental Lead Observer`.
+3. Filter for `Live Facebook Lead Observer`.
 
-At startup, the extension restores post IDs previously acknowledged by the
-local service and scans every other post currently loaded in the page. The
-console should then show:
+At startup, the extension restores handled post IDs and inspects other posts
+currently loaded in the page. Only posts with a verified Facebook timestamp
+younger than 20 minutes proceed to eligibility checking. The console should
+then show:
 
 ```text
-[Live Car Rental Lead Observer] Ready. Every unseen post loaded in this monitored tab will be sent for eligibility checking.
+[Live Facebook Lead Observer] Ready. Every unseen post loaded in this monitored tab will be checked for its configured lead type.
 ```
 
 When Facebook inserts a new post, the console logs a `NEW_POST` payload:
@@ -159,6 +160,7 @@ When Facebook inserts a new post, the console logs a `NEW_POST` payload:
   "authorName": "Displayed name or anonymous alias",
   "postText": "Post text",
   "postUrl": "https://www.facebook.com/groups/341298636779740/posts/1234567890/",
+  "publishedAt": "2026-09-16T00:00:00.000Z",
   "isExplicitlyAnonymous": false,
   "detectedAt": "2026-09-16T00:00:00.000Z"
 }
@@ -179,10 +181,12 @@ user is typing on the page. Persistent post history prevents duplicate alerts.
 
 ## Detection safeguards
 
-- Uses the post ID as the deduplication key, stored for seven days only after
-  the local service acknowledges processing.
+- Uses the post ID as the deduplication key, stored for seven days after the
+  post is handled or skipped by the freshness rule.
 - Converts links to a canonical URL without tracking parameters.
-- Scans every unseen post loaded in the page, regardless of its position.
+- Inspects every unseen post loaded in the page, regardless of its position,
+  but only classifies posts verified to be less than 20 minutes old.
+- Skips posts whose Facebook timestamp is missing or cannot be verified.
 - Reconciles the loaded page every five seconds in addition to observing live
   DOM changes.
 - Combines Facebook message fragments before classification and accepts strong

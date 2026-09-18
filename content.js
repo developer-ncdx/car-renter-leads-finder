@@ -10,10 +10,11 @@
   }
 
   const GroupConfig = globalThis.FbGroupConfig;
+  const PostFreshness = globalThis.FbPostFreshness;
 
-  if (!GroupConfig) {
+  if (!GroupConfig || !PostFreshness) {
     console.error(
-      "[Live Car Rental Lead Observer] Group configuration failed to load."
+      "[Live Facebook Lead Observer] Required extension modules failed to load."
     );
     return;
   }
@@ -27,6 +28,7 @@
     maxExtractionAttempts: 4,
     extractionFailureRetryMs: 30_000,
     deliveryRetryMs: 10_000,
+    maxPostAgeMs: PostFreshness.DEFAULT_MAX_AGE_MS,
     processedTtlMs: 7 * 24 * 60 * 60 * 1000,
     maxStoredPostIds: 1000,
     persistDebounceMs: 1000,
@@ -37,7 +39,7 @@
     fallbackActivityCooldownMs: 60_000
   });
 
-  const LOG_PREFIX = "[Live Car Rental Lead Observer]";
+  const LOG_PREFIX = "[Live Facebook Lead Observer]";
   const TARGET_ROUTE_PATTERN = new RegExp(
     `^/groups/${CONFIG.groupId}(?:/|$)`
   );
@@ -288,6 +290,72 @@
     return !nearestArticle || nearestArticle === container;
   }
 
+  function extractPostFreshness(candidate, container) {
+    const timestampElements = new Set();
+    const permalinkAnchors = [
+      candidate.anchor,
+      ...container.querySelectorAll(POST_LINK_SELECTOR)
+    ];
+
+    for (const anchor of permalinkAnchors) {
+      if (
+        !belongsToPostContainer(anchor, container) ||
+        parsePostLink(anchor.getAttribute("href"))?.postId !== candidate.postId
+      ) {
+        continue;
+      }
+
+      timestampElements.add(anchor);
+
+      for (const element of anchor.querySelectorAll(
+        "[data-utime], [datetime], [title], [aria-label], abbr, time"
+      )) {
+        timestampElements.add(element);
+      }
+    }
+
+    for (const element of container.querySelectorAll(
+      "abbr[data-utime], time[datetime]"
+    )) {
+      if (belongsToPostContainer(element, container)) {
+        timestampElements.add(element);
+      }
+    }
+
+    const timestampValues = [];
+
+    for (const element of timestampElements) {
+      for (const attribute of [
+        "data-utime",
+        "datetime",
+        "title",
+        "aria-label"
+      ]) {
+        const value = element.getAttribute(attribute);
+
+        if (value) {
+          timestampValues.push(value);
+        }
+      }
+
+      if (element.matches("a, abbr, time")) {
+        const text = normalizeInline(
+          element.innerText || element.textContent
+        );
+
+        if (text) {
+          timestampValues.push(text);
+        }
+      }
+    }
+
+    return PostFreshness.evaluateTimestampValues(
+      timestampValues,
+      Date.now(),
+      CONFIG.maxPostAgeMs
+    );
+  }
+
   function isLikelyUiText(text) {
     return /^(?:like|comment|share|send|follow|reply|edited|author|group admin|\d+\s+comments?)$/i
       .test(text);
@@ -431,7 +499,7 @@
     ) ?? null;
   }
 
-  function extractPayload(candidate) {
+  function extractPayload(candidate, freshness) {
     const container = findPostContainer(candidate.anchor);
 
     if (!container) {
@@ -462,6 +530,7 @@
       authorName,
       postText,
       postUrl: candidate.postUrl,
+      publishedAt: freshness.publishedAt,
       isExplicitlyAnonymous:
         /\banonymous (?:participant|member|user)\b/i.test(headerText),
       detectedAt: new Date().toISOString()
@@ -574,22 +643,49 @@
       attempts += 1;
 
       const currentCandidate = findCandidateByPostId(candidate.postId);
+      const container = currentCandidate
+        ? findPostContainer(currentCandidate.anchor)
+        : null;
 
-      if (currentCandidate) {
-        const container = findPostContainer(currentCandidate.anchor);
-
-        if (
-          container &&
-          expandPostText(container, candidate.postId) &&
-          attempts < CONFIG.maxExtractionAttempts
-        ) {
-          window.setTimeout(attemptExtraction, 300);
-          return;
-        }
+      if (
+        container &&
+        expandPostText(container, candidate.postId) &&
+        attempts < CONFIG.maxExtractionAttempts
+      ) {
+        window.setTimeout(attemptExtraction, 300);
+        return;
       }
 
-      const payload = currentCandidate
-        ? extractPayload(currentCandidate)
+      const freshness = currentCandidate && container
+        ? extractPostFreshness(currentCandidate, container)
+        : null;
+
+      if (freshness?.status === "stale") {
+        const ageMinutes = Math.floor(freshness.ageMs / 60_000);
+        pendingPostIds.delete(candidate.postId);
+        markProcessed(candidate.postId);
+        console.info(
+          `${LOG_PREFIX} Skipped post ${candidate.postId} because it is ` +
+          `${ageMinutes} minutes old (20-minute limit).`
+        );
+        return;
+      }
+
+      if (
+        freshness?.status === "unknown" &&
+        attempts >= CONFIG.maxExtractionAttempts
+      ) {
+        pendingPostIds.delete(candidate.postId);
+        markProcessed(candidate.postId);
+        console.warn(
+          `${LOG_PREFIX} Skipped post ${candidate.postId} because its ` +
+          "Facebook timestamp could not be verified."
+        );
+        return;
+      }
+
+      const payload = currentCandidate && freshness?.status === "fresh"
+        ? extractPayload(currentCandidate, freshness)
         : null;
 
       if (payload) {
