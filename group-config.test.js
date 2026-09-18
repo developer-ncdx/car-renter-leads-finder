@@ -4,8 +4,10 @@ import test from "node:test";
 await import("./group-config.js");
 
 const {
+  GROUP_TYPES,
   canonicalGroupUrl,
   normalizeGroupIds,
+  normalizeGroups,
   parseGroupId
 } = globalThis.FbGroupConfig;
 
@@ -39,6 +41,23 @@ test("normalizes and deduplicates stored group IDs", () => {
   assert.deepEqual(
     normalizeGroupIds(["123", 123, " 456 ", "", "group-name"]),
     ["123", "456"]
+  );
+});
+
+test("normalizes typed groups and migrates bare IDs to rental", () => {
+  assert.deepEqual(
+    normalizeGroups([
+      "123",
+      { id: "456", type: "job" },
+      { groupId: " 789 ", type: "unknown" },
+      { id: "456", type: "rental" },
+      { id: "not-numeric", type: "job" }
+    ]),
+    [
+      { id: "123", type: GROUP_TYPES.RENTAL },
+      { id: "456", type: GROUP_TYPES.RENTAL },
+      { id: "789", type: GROUP_TYPES.RENTAL }
+    ]
   );
 });
 

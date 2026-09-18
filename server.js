@@ -1,23 +1,28 @@
 import http from "node:http";
 
 import { evaluateLeadEligibility } from "./eligibility.js";
+import { evaluateJobEligibility } from "./job-eligibility.js";
 
 const MAX_BODY_BYTES = 64 * 1024;
 const DEDUPE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_DEDUPE_ENTRIES = 10_000;
 
-const SYSTEM_PROMPT = `
+const RENTAL_SYSTEM_PROMPT = `
 You classify Facebook posts for a car-rental operator in the Philippines.
 
 Return is_lead=true only when the post author is actively looking to rent or
 hire a car, van, SUV, MPV, or similar road vehicle for their own current or
 upcoming trip. The author does not need to explicitly say "with driver".
 
-Understand English, Filipino, and Taglish. Buyer phrases can include "LF",
-"looking for", "need", "hanap", "naghahanap", "kailangan", "may available
-ba", "mauupahan", a request for recommendations, or a price/quote question
-such as "magkano" or "how much". Trip details such as a vehicle type, route,
-date, or duration can support buyer intent.
+Understand English, Filipino, Taglish, texting shorthand, misspellings, and
+missing punctuation. Search shorthand includes "LF", "L/F", "LF4", "LFR",
+and "ISO". Price shorthand includes "HM", "H/M", "LP", "qte", "paquote",
+"qoute", "rate", "presyo", "magkano", and "mgkano". Buyer wording also
+includes "looking for", "need", "hanap", "naghahanap", "pahanap",
+"kailangan", "kelangan", "may avail", "mauupahan", and recommendation
+requests such as "reco". Trip details such as vehicle type or capacity, route,
+pickup/drop-off, date, and duration can establish buyer intent even when the
+opening phrase is abbreviated or missing.
 
 Return false for:
 - vehicle owners/operators advertising units, rates, promos, or availability
@@ -28,6 +33,31 @@ Return false for:
 
 Driver preference can be with-driver, self-drive, or omitted; all three can be
 leads when the author has explicit rental buyer intent.
+`.trim();
+
+const JOB_SYSTEM_PROMPT = `
+You classify Facebook posts for a targeted technology-job alert feed.
+
+Return is_lead=true only when an employer, recruiter, founder, or client is
+actively advertising a real job, contract, or freelance opening for at least
+one of these roles:
+- AI engineer, AI developer, AI specialist, ML engineer, or LLM developer
+- Bubble.io developer or Bubble developer
+- software developer or software engineer
+- AI agent developer or AI agent engineer
+- agentic developer, engineer, or specialist
+- AI-assisted developer or engineer
+- automation engineer, automation developer, or automation specialist
+
+Understand English, Filipino, Taglish, abbreviations such as AI, ML, LLM, SWE,
+SDE, dev, and engr, and common misspellings.
+
+Return false for:
+- candidates looking for work, sharing a resume, or advertising themselves
+- agencies or freelancers advertising development or automation services
+- courses, bootcamps, webinars, tutorials, and certifications
+- general discussions, advice, news, memes, or unrelated job openings
+- vague posts without a genuine hiring, contract, or freelance opportunity
 `.trim();
 
 function envValue(name) {
@@ -42,6 +72,11 @@ function requiredEnv(name) {
   }
 
   return value;
+}
+
+function optionalEnv(name) {
+  const value = envValue(name);
+  return /^replace_with_/i.test(value) ? "" : value;
 }
 
 function parseBooleanEnv(name) {
@@ -73,6 +108,8 @@ const config = Object.freeze({
   port: parsePort(envValue("SERVER_PORT") || "8787"),
   telegramToken: requiredEnv("TELEGRAM_BOT_TOKEN"),
   telegramChatId: requiredEnv("TELEGRAM_CHAT_ID"),
+  telegramJobsToken: optionalEnv("TELEGRAM_JOBS_BOT_TOKEN"),
+  telegramJobsChatId: optionalEnv("TELEGRAM_JOBS_CHAT_ID"),
   bypassLlm: parseBooleanEnv("BYPASS_LLM"),
   openAiApiKey: envValue("OPENAI_API_KEY"),
   openAiModel: envValue("OPENAI_MODEL") || "gpt-5.6-luna"
@@ -84,6 +121,15 @@ if (!["127.0.0.1", "::1", "localhost"].includes(config.host)) {
 
 if (!/^-?\d+$/.test(config.telegramChatId)) {
   throw new Error("TELEGRAM_CHAT_ID must be a numeric Telegram chat ID");
+}
+
+if (
+  config.telegramJobsChatId &&
+  !/^-?\d+$/.test(config.telegramJobsChatId)
+) {
+  throw new Error(
+    "TELEGRAM_JOBS_CHAT_ID must be a numeric Telegram chat ID"
+  );
 }
 
 if (!config.bypassLlm) {
@@ -189,9 +235,14 @@ function validateLeadPayload(value) {
   const authorName = sanitizeString(value.authorName, "authorName", 200);
   const postText = sanitizeString(value.postText, "postText", 20_000);
   const postUrl = sanitizeString(value.postUrl, "postUrl", 2_000);
+  const leadType = sanitizeString(value.leadType, "leadType", 16);
 
   if (!/^\d+$/.test(groupId) || !/^\d+$/.test(postId)) {
     throw new HttpError(400, "groupId and postId must be numeric");
+  }
+
+  if (!["rental", "job"].includes(leadType)) {
+    throw new HttpError(400, "leadType must be rental or job");
   }
 
   let parsedUrl;
@@ -217,6 +268,7 @@ function validateLeadPayload(value) {
 
   return {
     groupId,
+    leadType,
     postId,
     authorName,
     postText,
@@ -291,16 +343,22 @@ async function parseErrorResponse(response) {
   }
 }
 
-async function sendTelegramMessage(text) {
+async function sendTelegramMessage(text, chatId, botToken) {
+  if (!chatId || !botToken) {
+    throw new Error(
+      "Telegram bot or destination is not configured for this lead type"
+    );
+  }
+
   const response = await fetch(
-    `https://api.telegram.org/bot${config.telegramToken}/sendMessage`,
+    `https://api.telegram.org/bot${botToken}/sendMessage`,
     {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        chat_id: config.telegramChatId,
+        chat_id: chatId,
         text,
         parse_mode: "HTML",
         disable_web_page_preview: true
@@ -327,9 +385,12 @@ async function sendTelegramMessage(text) {
 }
 
 function formatLeadMessage(payload) {
+  const isJob = payload.leadType === "job";
   const title = config.bypassLlm
-    ? "🧪 <b>New Facebook Post (LLM bypassed)</b>"
-    : "🚨 <b>New Car Rental Lead!</b>";
+    ? `🧪 <b>New ${isJob ? "Job" : "Rental"} Post (LLM bypassed)</b>`
+    : isJob
+      ? "💼 <b>New Targeted Tech Job!</b>"
+      : "🚨 <b>New Car Rental Lead!</b>";
   const author = escapeHtml(payload.authorName);
   const postText = escapeHtml(truncate(payload.postText, 3_000));
   const postUrl = escapeHtml(payload.postUrl);
@@ -363,7 +424,7 @@ function extractResponseText(data) {
   return "";
 }
 
-async function classifyLead(postText) {
+async function classifyLead(postText, instructions) {
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
@@ -372,7 +433,7 @@ async function classifyLead(postText) {
     },
     body: JSON.stringify({
       model: config.openAiModel,
-      instructions: SYSTEM_PROMPT,
+      instructions,
       input: postText,
       store: false,
       reasoning: {
@@ -434,12 +495,26 @@ async function classifyLead(postText) {
 }
 
 async function processLead(payload) {
-  if (!config.bypassLlm) {
-    const eligibility = evaluateLeadEligibility(payload.postText);
+  const isJob = payload.leadType === "job";
 
+  if (
+    isJob &&
+    (!config.telegramJobsToken || !config.telegramJobsChatId)
+  ) {
+    throw new Error(
+      "TELEGRAM_JOBS_BOT_TOKEN and TELEGRAM_JOBS_CHAT_ID are required " +
+      "for job-posting groups"
+    );
+  }
+
+  const eligibility = isJob
+    ? evaluateJobEligibility(payload.postText)
+    : evaluateLeadEligibility(payload.postText);
+
+  if (!config.bypassLlm) {
     if (!eligibility.eligible) {
       console.info(
-        `[lead] Rejected by rule=${eligibility.reason} ` +
+        `[${payload.leadType}] Rejected by rule=${eligibility.reason} ` +
         `group=${payload.groupId} post=${payload.postId} ` +
         `text=${logTextPreview(payload.postText)}`
       );
@@ -455,11 +530,14 @@ async function processLead(payload) {
 
   const isLead = config.bypassLlm
     ? true
-    : await classifyLead(payload.postText);
+    : await classifyLead(
+      payload.postText,
+      isJob ? JOB_SYSTEM_PROMPT : RENTAL_SYSTEM_PROMPT
+    );
 
   if (!isLead) {
     console.info(
-      `[lead] Rejected by GPT group=${payload.groupId} ` +
+      `[${payload.leadType}] Rejected by GPT group=${payload.groupId} ` +
       `post=${payload.postId} text=${logTextPreview(payload.postText)}`
     );
 
@@ -471,12 +549,21 @@ async function processLead(payload) {
     };
   }
 
+  const telegramChatId = isJob
+    ? config.telegramJobsChatId
+    : config.telegramChatId;
+  const telegramToken = isJob
+    ? config.telegramJobsToken
+    : config.telegramToken;
   const telegramMessageId = await sendTelegramMessage(
-    formatLeadMessage(payload)
+    formatLeadMessage(payload),
+    telegramChatId,
+    telegramToken
   );
 
   console.info(
-    `[lead] Sent to Telegram group=${payload.groupId} post=${payload.postId}`
+    `[${payload.leadType}] Sent to Telegram group=${payload.groupId} ` +
+    `post=${payload.postId}`
   );
 
   return {
@@ -488,7 +575,8 @@ async function processLead(payload) {
 
 async function handleLeadRequest(request, response) {
   const payload = validateLeadPayload(await readJson(request));
-  const dedupeKey = `${payload.groupId}:${payload.postId}`;
+  const dedupeKey =
+    `${payload.leadType}:${payload.groupId}:${payload.postId}`;
 
   pruneDedupeCache();
 
@@ -518,18 +606,27 @@ async function handleLeadRequest(request, response) {
   }
 }
 
-async function handleTestAlert(response) {
+async function handleTestAlert(response, leadType = "rental") {
+  const isJob = leadType === "job";
+  const chatId = isJob
+    ? config.telegramJobsChatId
+    : config.telegramChatId;
+  const botToken = isJob
+    ? config.telegramJobsToken
+    : config.telegramToken;
   const messageId = await enqueue(() =>
     sendTelegramMessage(
       [
-        "🧪 <b>Live Car Rental Lead Observer</b>",
+        `🧪 <b>Live ${isJob ? "Job Post" : "Car Rental Lead"} Observer</b>`,
         "",
-        "The local Telegram bridge is working."
-      ].join("\n")
+        `The local ${isJob ? "job" : "rental"} Telegram bridge is working.`
+      ].join("\n"),
+      chatId,
+      botToken
     )
   );
 
-  console.info("[test] Telegram test alert sent");
+  console.info(`[test] ${leadType} Telegram test alert sent`);
   sendJson(response, 200, {
     ok: true,
     telegramSent: true,
@@ -550,13 +647,24 @@ const server = http.createServer(async (request, response) => {
         bypassLlm: config.bypassLlm,
         model: config.bypassLlm ? null : config.openAiModel,
         queueDepth,
-        dedupeEntries: processedPostKeys.size
+        dedupeEntries: processedPostKeys.size,
+        jobsTelegramConfigured: Boolean(
+          config.telegramJobsToken && config.telegramJobsChatId
+        )
       });
       return;
     }
 
     if (request.method === "POST" && requestUrl.pathname === "/test-alert") {
       await handleTestAlert(response);
+      return;
+    }
+
+    if (
+      request.method === "POST" &&
+      requestUrl.pathname === "/test-job-alert"
+    ) {
+      await handleTestAlert(response, "job");
       return;
     }
 

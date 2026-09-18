@@ -30,6 +30,22 @@
           >
           <button id="add-group" class="primary" type="submit">Add</button>
         </div>
+        <fieldset class="type-picker">
+          <legend>Group type</legend>
+          <label class="type-option">
+            <input
+              type="radio"
+              name="groupType"
+              value="rental"
+              checked
+            >
+            <span>Car rental</span>
+          </label>
+          <label class="type-option">
+            <input type="radio" name="groupType" value="job">
+            <span>Job posts</span>
+          </label>
+        </fieldset>
         <p id="status" class="status" role="status" aria-live="polite"></p>
       </form>
 
@@ -45,14 +61,17 @@
       </section>
 
       <footer>
-        Keep each group open in its own tab and sorted by New Posts.
+        Keep each monitored group open in its own browser tab.
       </footer>
     </main>
 
     <template id="group-item-template">
       <li class="group-item">
         <a class="group-link" target="_blank" rel="noreferrer">
-          <span class="group-label"></span>
+          <span class="group-title">
+            <span class="group-label"></span>
+            <span class="group-type"></span>
+          </span>
           <span class="group-url"></span>
         </a>
         <button class="remove-group" type="button">Remove</button>

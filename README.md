@@ -1,8 +1,8 @@
-# Real-Time Car Rental Lead Finder
+# Real-Time Facebook Lead Finder
 
-Local pipeline that monitors allowlisted Facebook group tabs, filters for
-people actively looking to rent a vehicle, and sends qualified leads to
-Telegram. It uses live DOM updates first and a conservative randomized refresh
+Local pipeline that monitors allowlisted Facebook group tabs and routes either
+car-rental leads or targeted technology job openings to separate Telegram
+groups. It uses live DOM updates first and a conservative randomized refresh
 when Facebook does not update a tab.
 
 ## Prerequisites
@@ -11,7 +11,7 @@ when Facebook does not update a tab.
 - Node.js 20.6 or newer
 - Chrome, Edge, or another Chromium browser
 - An authenticated Facebook account with access to the configured groups
-- Private credentials for the notification destination
+- Private credentials for the rental and job notification destinations
 - An OpenAI API key when GPT filtering is enabled
 
 Do not automate Facebook login. Use an existing authenticated browser profile.
@@ -36,7 +36,8 @@ cp .env.example .env.local
 
 Complete the required entries in `.env.local` using `.env.example` as the
 template. Keep all real values local and never commit, paste, or screenshot
-them. The bypass option may be used briefly for a notification connection
+them. Configure separate rental and job bots with their corresponding group
+chat IDs. The bypass option may be used briefly for a notification connection
 test, but disable it before normal use so unqualified posts are filtered.
 
 ### 3. Start the local notifier
@@ -52,6 +53,7 @@ To verify Telegram while the server remains open, use a second terminal:
 
 ```bash
 npm run test:alert
+npm run test:job-alert
 ```
 
 ### 4. Load the unpacked extension
@@ -69,12 +71,14 @@ Facebook content script sends a post.
 
 1. Click the extension icon in the browser toolbar.
 2. Paste a Facebook group URL containing a numeric group ID.
-3. Click **Add**.
-4. Repeat for every group that should be monitored.
+3. Select **Car rental** or **Job posts**.
+4. Click **Add**.
+5. Repeat for every group that should be monitored.
 
 The popup lists all monitored groups as clickable links with **Remove**
-buttons. Group settings are saved locally in the browser. Existing groups from
-versions before 0.6.0 are added automatically during the upgrade.
+buttons and type badges. Selecting a different type for an existing group
+updates its routing. Group settings are saved locally in the browser. Existing
+groups are migrated as **Car rental** during the upgrade.
 
 ### 6. Open monitored Facebook tabs
 
@@ -102,7 +106,17 @@ With filtering enabled, explicit buyer requests for a vehicle are eligible
 whether they request self-drive, with-driver service, or do not state a driver
 preference. The local rules still reject competitor advertisements, passenger
 searches, driver jobs, and posts without buyer intent. GPT performs the final
-intent check.
+intent check. Common English, Filipino, and Taglish shorthand is supported,
+including `LF`, `L/F`, `LF4`, `LFR`, `ISO`, `HM`, `H/M`, `LP`, `qte`,
+`paquote`, `reco`, `avail`, `rnt`, `s/d`, `w/ drv`, and common misspellings.
+Vehicle, route, and duration context also lets GPT review unfamiliar wording
+instead of rejecting it immediately.
+
+Job groups accept genuine hiring, contract, and freelance posts for AI
+engineers, Bubble.io developers, software developers, AI-agent or agentic
+developers, AI-assisted developers, AI specialists, and automation engineers
+or developers. Job-seeker posts, courses, and service advertisements are
+rejected.
 
 Run the regression suite:
 
@@ -116,9 +130,9 @@ npm test
 Facebook content script
 → Chrome extension service worker
 → http://127.0.0.1:8787
-→ deterministic eligibility rules
-→ GPT intent classifier
-→ Telegram
+→ group type routing
+  → rental eligibility + GPT → rental Telegram group
+  → job eligibility + GPT → jobs Telegram group
 ```
 
 ## Verify it is running
@@ -140,6 +154,7 @@ When Facebook inserts a new post, the console logs a `NEW_POST` payload:
 ```json
 {
   "groupId": "341298636779740",
+  "leadType": "rental",
   "postId": "1234567890",
   "authorName": "Displayed name or anonymous alias",
   "postText": "Post text",
@@ -187,17 +202,17 @@ Facebook's servers are not present in the DOM and cannot be observed.
 
 - **No startup logs:** Reload the group tab after loading or updating the
   extension and confirm the group appears in the extension popup.
-- **Existing posts are processed after an update:** Version 0.6.3 starts a new
-  acknowledged-post history so posts silently skipped by older versions are
-  scanned once.
+- **Existing posts are processed after changing type:** Rental and job groups
+  keep separate acknowledged-post histories.
 - **A New posts button appears:** The extension clicks it within 12 seconds. If
   it does not, confirm the console logged `Ready`.
 - **Testing with a second device:** Post from the phone while the desktop tab
   already shows `Ready`.
 - **Local bridge unavailable:** Start `npm start`, confirm port `8787` is free,
   and then reload the extension and Facebook tab.
-- **Notification delivery fails:** Confirm the private notification credentials
-  and destination settings are current.
+- **Job notification delivery fails:** Confirm the second Telegram group chat
+  ID and jobs bot token are configured locally, and that bot is a member of
+  the jobs group.
 - **A new post is skipped:** Facebook may have changed its DOM. Inspect the
   post card for its `/groups/<GROUP_ID>/posts/<POST_ID>/` link and message
   container.
@@ -220,6 +235,10 @@ provider advertisements, and posts without buyer or vehicle-rental context.
 Driver preference is optional and self-drive requests are eligible. This
 prevents clear false positives and avoids unnecessary API cost. GPT performs
 the final intent check only for candidates that pass those rules.
+
+Job groups use a separate deterministic gate and GPT prompt. Only targeted
+hiring opportunities proceed; candidates seeking work, training content,
+service advertisements, and unrelated roles are dropped.
 
 Run the guardrail regression tests with:
 

@@ -49,12 +49,22 @@ async function handleNewPost(message, sender) {
     };
   }
 
-  const monitoredGroupIds = await GroupConfig.loadGroupIds();
+  const monitoredGroups = await GroupConfig.loadGroups();
+  const monitoredGroup = monitoredGroups.find(
+    (group) => group.id === senderGroupId
+  );
 
-  if (!monitoredGroupIds.includes(senderGroupId)) {
+  if (!monitoredGroup) {
     return {
       ok: false,
       error: `Facebook group ${senderGroupId} is not in the monitored list`
+    };
+  }
+
+  if (message.payload?.leadType !== monitoredGroup.type) {
+    return {
+      ok: false,
+      error: `Facebook group ${senderGroupId} has a mismatched lead type`
     };
   }
 
@@ -83,10 +93,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function initialize() {
   try {
-    const groupIds = await GroupConfig.loadGroupIds();
+    const groups = await GroupConfig.loadGroups();
     console.info(
-      `[Lead Bridge] Ready with ${groupIds.length} monitored ` +
-      `${groupIds.length === 1 ? "group" : "groups"}; forwarding posts to ` +
+      `[Lead Bridge] Ready with ${groups.length} monitored ` +
+      `${groups.length === 1 ? "group" : "groups"}; forwarding posts to ` +
       `${LOCAL_SERVICE_URL}/leads`
     );
   } catch (error) {
@@ -97,17 +107,28 @@ async function initialize() {
 }
 
 async function initializeInstalledGroups(details) {
-  const stored = await chrome.storage.local.get(GroupConfig.STORAGE_KEY);
+  const stored = await chrome.storage.local.get([
+    GroupConfig.STORAGE_KEY,
+    GroupConfig.LEGACY_STORAGE_KEY
+  ]);
+  const hasStoredGroups =
+    Array.isArray(stored[GroupConfig.STORAGE_KEY]) ||
+    Array.isArray(stored[GroupConfig.LEGACY_STORAGE_KEY]);
 
-  if (!Array.isArray(stored[GroupConfig.STORAGE_KEY])) {
+  if (!hasStoredGroups) {
     const isLegacyUpgrade =
       details.reason === "update" &&
       /^0\.[0-5]\./.test(details.previousVersion ?? "");
-    const initialGroupIds = isLegacyUpgrade
-      ? GroupConfig.LEGACY_GROUP_IDS
+    const initialGroups = isLegacyUpgrade
+      ? GroupConfig.LEGACY_GROUP_IDS.map((id) => ({
+        id,
+        type: GroupConfig.GROUP_TYPES.RENTAL
+      }))
       : [];
 
-    await GroupConfig.saveGroupIds(initialGroupIds);
+    await GroupConfig.saveGroups(initialGroups);
+  } else {
+    await GroupConfig.loadGroups();
   }
 
   await initialize();

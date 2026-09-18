@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Live Car Rental Lead Observer",
-  "version": "0.6.3",
+  "version": "0.7.0",
   "description": "Scans unseen Facebook group posts and forwards qualified leads to a local notifier.",
   "permissions": [
     "storage"

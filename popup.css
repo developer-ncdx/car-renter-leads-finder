@@ -73,7 +73,7 @@ label {
   gap: 8px;
 }
 
-input {
+input[type="url"] {
   min-width: 0;
   flex: 1;
   padding: 10px 11px;
@@ -85,9 +85,63 @@ input {
   font-size: 12px;
 }
 
-input:focus {
+input[type="url"]:focus {
   border-color: #2563eb;
   box-shadow: 0 0 0 3px rgb(37 99 235 / 14%);
+}
+
+.type-picker {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.type-picker legend {
+  margin-bottom: 7px;
+  padding: 0;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.type-option {
+  position: relative;
+  margin: 0;
+}
+
+.type-option input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.type-option span {
+  display: block;
+  padding: 8px 10px;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  color: #64748b;
+  background: #f8fafc;
+  font-size: 11px;
+  font-weight: 750;
+  text-align: center;
+  cursor: pointer;
+}
+
+.type-option input:checked + span {
+  border-color: #2563eb;
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
+.type-option input:focus-visible + span {
+  outline: 3px solid rgb(37 99 235 / 28%);
+  outline-offset: 2px;
 }
 
 button {
@@ -191,6 +245,12 @@ ul {
   color: #2563eb;
 }
 
+.group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .group-label,
 .group-url {
   display: block;
@@ -202,6 +262,24 @@ ul {
 .group-label {
   font-size: 12px;
   font-weight: 750;
+}
+
+.group-type {
+  flex: none;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.group-type.rental {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
+.group-type.job {
+  color: #7e22ce;
+  background: #f3e8ff;
 }
 
 .group-url {

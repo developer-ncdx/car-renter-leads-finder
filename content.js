@@ -27,7 +27,6 @@
     maxExtractionAttempts: 4,
     extractionFailureRetryMs: 30_000,
     deliveryRetryMs: 10_000,
-    storageKey: `processedPosts:v4:${activeGroupMatch[1]}`,
     processedTtlMs: 7 * 24 * 60 * 60 * 1000,
     maxStoredPostIds: 1000,
     persistDebounceMs: 1000,
@@ -66,13 +65,21 @@
   let deliveriesInFlight = 0;
   let lastRelevantFeedActivityAt = Date.now();
   let monitoringEnabled = false;
+  let activeLeadType = null;
   let observerStarted = false;
   let observerStartPending = false;
   let chronologicalRedirectPending = false;
 
+  function processedStorageKey() {
+    return activeLeadType === GroupConfig.GROUP_TYPES.JOB
+      ? `processedJobPosts:v1:${CONFIG.groupId}`
+      : `processedPosts:v6:${CONFIG.groupId}`;
+  }
+
   async function loadProcessedPosts() {
-    const stored = await chrome.storage.local.get(CONFIG.storageKey);
-    const entries = stored?.[CONFIG.storageKey];
+    const storageKey = processedStorageKey();
+    const stored = await chrome.storage.local.get(storageKey);
+    const entries = stored?.[storageKey];
 
     if (!entries || typeof entries !== "object") {
       return false;
@@ -101,9 +108,10 @@
       const fresh = [...processedPostIds]
         .filter(([, processedAt]) => processedAt >= cutoff)
         .slice(-CONFIG.maxStoredPostIds);
+      const storageKey = processedStorageKey();
 
       chrome.storage.local
-        .set({ [CONFIG.storageKey]: Object.fromEntries(fresh) })
+        .set({ [storageKey]: Object.fromEntries(fresh) })
         .catch((error) => {
           console.warn(
             `${LOG_PREFIX} Could not save post history: ${error.message}`
@@ -449,6 +457,7 @@
 
     return {
       groupId: CONFIG.groupId,
+      leadType: activeLeadType,
       postId: candidate.postId,
       authorName,
       postText,
@@ -810,9 +819,12 @@
   }
 
   function logReady() {
+    const typeLabel = activeLeadType === GroupConfig.GROUP_TYPES.JOB
+      ? "job posts"
+      : "car-rental leads";
     console.info(
       `${LOG_PREFIX} Ready. Every unseen post loaded in this monitored ` +
-      "tab will be sent for eligibility checking."
+      `tab will be checked for ${typeLabel}.`
     );
     startReconciliationScan();
     scheduleFallbackRefresh();
@@ -888,8 +900,11 @@
     startObserver(hasStoredHistory);
   }
 
-  function applyMonitoringState(groupIds) {
-    const shouldMonitor = groupIds.includes(CONFIG.groupId);
+  function applyMonitoringState(groups) {
+    const monitoredGroup = groups.find(
+      (group) => group.id === CONFIG.groupId
+    );
+    const shouldMonitor = Boolean(monitoredGroup);
 
     if (!shouldMonitor) {
       if (monitoringEnabled) {
@@ -916,9 +931,26 @@
     }
 
     if (monitoringEnabled) {
+      if (activeLeadType !== monitoredGroup.type) {
+        monitoringEnabled = false;
+        console.info(
+          `${LOG_PREFIX} Group type changed; reloading this tab.`
+        );
+        window.location.reload();
+      }
+
       return;
     }
 
+    if (activeLeadType && activeLeadType !== monitoredGroup.type) {
+      console.info(
+        `${LOG_PREFIX} Group type changed; reloading this tab.`
+      );
+      window.location.reload();
+      return;
+    }
+
+    activeLeadType = monitoredGroup.type;
     monitoringEnabled = true;
 
     if (!enforceChronologicalFeed()) {
@@ -959,11 +991,11 @@
     }
 
     applyMonitoringState(
-      GroupConfig.normalizeGroupIds(groupChange.newValue)
+      GroupConfig.normalizeGroups(groupChange.newValue)
     );
   });
 
-  GroupConfig.loadGroupIds()
+  GroupConfig.loadGroups()
     .then(applyMonitoringState)
     .catch((error) => {
       console.error(
