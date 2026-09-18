@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Live Facebook Lead Observer",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Monitors Facebook groups for qualified rental leads and targeted job posts.",
   "permissions": [
     "storage"

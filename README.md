@@ -186,7 +186,9 @@ user is typing on the page. Persistent post history prevents duplicate alerts.
 - Converts links to a canonical URL without tracking parameters.
 - Inspects every unseen post loaded in the page, regardless of its position,
   but only classifies posts verified to be less than 20 minutes old.
-- Skips posts whose Facebook timestamp is missing or cannot be verified.
+- Reads timestamp evidence from permalink metadata and anonymous-post headers.
+- Retries unverified timestamps every 30 seconds for up to 20 minutes instead
+  of permanently skipping them on the first extraction failure.
 - Reconciles the loaded page every five seconds in addition to observing live
   DOM changes.
 - Combines Facebook message fragments before classification and accepts strong

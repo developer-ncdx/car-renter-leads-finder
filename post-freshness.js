@@ -37,6 +37,20 @@
       .trim();
   }
 
+  function extractTimestampTokens(value) {
+    const text = normalize(value);
+
+    if (!text) {
+      return [];
+    }
+
+    const matches = text.match(
+      /\b(?:just\s+now|a\s+moment\s+ago|(?:about\s+)?(?:\d+|an?|one)\s*(?:seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h|days?|d|weeks?|wks?|wk|w)(?:\s+ago)?)\b/gi
+    );
+
+    return [...new Set((matches ?? []).map((match) => match.trim()))];
+  }
+
   function parseClockTime(value) {
     const match = value.match(
       /^(\d{1,2})(?::(\d{2}))?\s*([ap]m)?$/i
@@ -183,8 +197,29 @@
     };
   }
 
+  function getUnverifiedRetry(
+    firstSeenAt,
+    now = Date.now(),
+    retryWindowMs = DEFAULT_MAX_AGE_MS,
+    retryDelayMs = 30_000
+  ) {
+    const remainingMs = retryWindowMs - Math.max(0, now - firstSeenAt);
+
+    return remainingMs > 0
+      ? {
+        shouldRetry: true,
+        delayMs: Math.min(retryDelayMs, remainingMs)
+      }
+      : {
+        shouldRetry: false,
+        delayMs: 0
+      };
+  }
+
   globalThis.FbPostFreshness = Object.freeze({
     DEFAULT_MAX_AGE_MS,
+    extractTimestampTokens,
+    getUnverifiedRetry,
     parseTimestamp,
     evaluateTimestampValues
   });

@@ -29,6 +29,8 @@
     extractionFailureRetryMs: 30_000,
     deliveryRetryMs: 10_000,
     maxPostAgeMs: PostFreshness.DEFAULT_MAX_AGE_MS,
+    timestampRetryMs: 30_000,
+    timestampRetryWindowMs: PostFreshness.DEFAULT_MAX_AGE_MS,
     processedTtlMs: 7 * 24 * 60 * 60 * 1000,
     maxStoredPostIds: 1000,
     persistDebounceMs: 1000,
@@ -57,6 +59,7 @@
   const pendingPostIds = new Set();
   const expandedPostIds = new Set();
   const retryNotBefore = new Map();
+  const unverifiedPostFirstSeen = new Map();
 
   let scanTimer = null;
   let reconciliationTimer = null;
@@ -74,8 +77,8 @@
 
   function processedStorageKey() {
     return activeLeadType === GroupConfig.GROUP_TYPES.JOB
-      ? `processedJobPosts:v1:${CONFIG.groupId}`
-      : `processedPosts:v6:${CONFIG.groupId}`;
+      ? `processedJobPosts:v2:${CONFIG.groupId}`
+      : `processedPosts:v7:${CONFIG.groupId}`;
   }
 
   async function loadProcessedPosts() {
@@ -128,6 +131,7 @@
     }
 
     retryNotBefore.delete(postId);
+    unverifiedPostFirstSeen.delete(postId);
     persistProcessedPosts();
   }
 
@@ -291,40 +295,25 @@
   }
 
   function extractPostFreshness(candidate, container) {
-    const timestampElements = new Set();
+    const now = Date.now();
+    const directTimestampValues = new Set();
+    const validPermalinkAnchors = [];
+    const postMessageSelector =
+      '[data-ad-rendering-role="story_message"], ' +
+      '[data-ad-preview="message"], ' +
+      '[data-ad-comet-preview="message"], ' +
+      '[data-testid="post_message"]';
     const permalinkAnchors = [
       candidate.anchor,
       ...container.querySelectorAll(POST_LINK_SELECTOR)
     ];
 
-    for (const anchor of permalinkAnchors) {
-      if (
-        !belongsToPostContainer(anchor, container) ||
-        parsePostLink(anchor.getAttribute("href"))?.postId !== candidate.postId
-      ) {
-        continue;
-      }
-
-      timestampElements.add(anchor);
-
-      for (const element of anchor.querySelectorAll(
-        "[data-utime], [datetime], [title], [aria-label], abbr, time"
-      )) {
-        timestampElements.add(element);
-      }
-    }
-
-    for (const element of container.querySelectorAll(
-      "abbr[data-utime], time[datetime]"
-    )) {
-      if (belongsToPostContainer(element, container)) {
-        timestampElements.add(element);
-      }
-    }
-
-    const timestampValues = [];
-
-    for (const element of timestampElements) {
+    function collectElementValues(
+      element,
+      values,
+      includeTokens = false,
+      tokenLimit = Number.POSITIVE_INFINITY
+    ) {
       for (const attribute of [
         "data-utime",
         "datetime",
@@ -334,26 +323,105 @@
         const value = element.getAttribute(attribute);
 
         if (value) {
-          timestampValues.push(value);
+          values.add(value);
         }
       }
 
-      if (element.matches("a, abbr, time")) {
-        const text = normalizeInline(
-          element.innerText || element.textContent
-        );
+      const text = normalizeInline(
+        element.innerText || element.textContent
+      );
 
-        if (text) {
-          timestampValues.push(text);
+      if (text && element.matches("a, abbr, time")) {
+        values.add(text);
+      }
+
+      if (text && includeTokens) {
+        for (
+          const token of PostFreshness
+            .extractTimestampTokens(text)
+            .slice(0, tokenLimit)
+        ) {
+          values.add(token);
         }
       }
     }
 
-    return PostFreshness.evaluateTimestampValues(
-      timestampValues,
-      Date.now(),
+    for (const anchor of permalinkAnchors) {
+      if (
+        !belongsToPostContainer(anchor, container) ||
+        parsePostLink(anchor.getAttribute("href"))?.postId !== candidate.postId
+      ) {
+        continue;
+      }
+
+      validPermalinkAnchors.push(anchor);
+      collectElementValues(anchor, directTimestampValues, true);
+
+      for (const element of anchor.querySelectorAll(
+        "span, [data-utime], [datetime], [title], [aria-label], abbr, time"
+      )) {
+        collectElementValues(element, directTimestampValues, true);
+      }
+    }
+
+    const directResult = PostFreshness.evaluateTimestampValues(
+      [...directTimestampValues],
+      now,
       CONFIG.maxPostAgeMs
     );
+
+    if (directResult.status !== "unknown") {
+      return directResult;
+    }
+
+    for (const anchor of validPermalinkAnchors) {
+      let headerAncestor = anchor.parentElement;
+
+      for (
+        let depth = 0;
+        headerAncestor &&
+        headerAncestor !== container &&
+        depth < 4;
+        depth += 1
+      ) {
+        if (headerAncestor.querySelector(postMessageSelector)) {
+          break;
+        }
+
+        const ancestorTimestampValues = new Set();
+        collectElementValues(
+          headerAncestor,
+          ancestorTimestampValues,
+          true,
+          1
+        );
+
+        for (const element of headerAncestor.querySelectorAll(
+          "[data-utime], [datetime], [title], [aria-label], abbr, time"
+        )) {
+          collectElementValues(
+            element,
+            ancestorTimestampValues,
+            true,
+            1
+          );
+        }
+
+        const ancestorResult = PostFreshness.evaluateTimestampValues(
+          [...ancestorTimestampValues],
+          now,
+          CONFIG.maxPostAgeMs
+        );
+
+        if (ancestorResult.status !== "unknown") {
+          return ancestorResult;
+        }
+
+        headerAncestor = headerAncestor.parentElement;
+      }
+    }
+
+    return directResult;
   }
 
   function isLikelyUiText(text) {
@@ -675,12 +743,36 @@
         freshness?.status === "unknown" &&
         attempts >= CONFIG.maxExtractionAttempts
       ) {
-        pendingPostIds.delete(candidate.postId);
-        markProcessed(candidate.postId);
-        console.warn(
-          `${LOG_PREFIX} Skipped post ${candidate.postId} because its ` +
-          "Facebook timestamp could not be verified."
+        const now = Date.now();
+        const firstSeenAt =
+          unverifiedPostFirstSeen.get(candidate.postId) ?? now;
+        const retry = PostFreshness.getUnverifiedRetry(
+          firstSeenAt,
+          now,
+          CONFIG.timestampRetryWindowMs,
+          CONFIG.timestampRetryMs
         );
+
+        unverifiedPostFirstSeen.set(candidate.postId, firstSeenAt);
+        pendingPostIds.delete(candidate.postId);
+
+        if (!retry.shouldRetry) {
+          markProcessed(candidate.postId);
+          console.warn(
+            `${LOG_PREFIX} Stopped retrying post ${candidate.postId} after ` +
+            "its Facebook timestamp remained unavailable for 20 minutes."
+          );
+        } else {
+          schedulePostRetry(
+            candidate.postId,
+            retry.delayMs
+          );
+          console.warn(
+            `${LOG_PREFIX} Facebook timestamp unavailable for post ` +
+            `${candidate.postId}; it remains unprocessed and will be retried.`
+          );
+        }
+
         return;
       }
 
@@ -689,6 +781,7 @@
         : null;
 
       if (payload) {
+        unverifiedPostFirstSeen.delete(candidate.postId);
         emitNewPost(payload);
         return;
       }
