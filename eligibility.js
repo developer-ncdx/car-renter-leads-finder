@@ -38,8 +38,22 @@ const PROVIDER_AD_SIGNAL_PATTERNS = Object.freeze([
   /\bfree\s+(?:delivery|pick[\s-]*up|drop[\s-]*off)\b/i,
   /\b(?:airport\s+transport|transport\s+service)\s+available\b/i,
   /\b(?:\+?63|0)9\d{2}[\s-]?\d{3}[\s-]?\d{4}\b/i,
-  /(?:#[a-z0-9_]+\s*){2,}/i
+  /(?:#[a-z0-9_]+\s*){2,}/i,
+  /\b(?:cars?|vans?|suvs?|mpvs?|vehicles?|innova|avanza|vios|hi[\s-]*ace|grandia|urvan|starex)\s+for\s+rent\b/i,
+  /\bavailable\s+self[\s-]*drive\b/i,
+  /\baffordable\s+(?:rates?|prices?|packages?)\b/i,
+  /\bfor\s+any\s+(?:occasions?|events?)\b/i,
+  /\bdoor[\s-]*to[\s-]*door\s+(?:service|transport)\b/i,
+  /\b(?:daily\s+byahe|vice\s+versa|pasahero\s+pasabay|pet\s+padala|bagahe\s+padala|docs?\s+padala)\b/i,
+  /\b(?:free\s+advance\s+booking|no\s+(?:advance|reservation)\s+fee|strictly\s+no\s+cancellation|no\s+double\s+booking)\b/i,
+  /\b(?:safe|legit|trusted)\b.{0,20}\bsince\s+(?:19|20)\d{2}\b/i,
+  /\b(?:pm|dm|message)\s+or\s+(?:call|text)\b/i
 ]);
+
+const PHONE_NUMBER_PATTERN =
+  /\b(?:\+?63|0)9\d{2}[\s-]?\d{3}[\s-]?\d{4}\b/gi;
+const SEATING_CAPACITY_PATTERN =
+  /\b(?:[2-9]|[1-5]\d)(?:\s*-\s*(?:[2-9]|[1-5]\d))?[\s-]*(?:seaters?|strs?|s)\b/gi;
 
 const VEHICLE_PATTERN_SOURCE =
   String.raw`(?:cars?|kots?e|koche|autos?|vans?|suvs?|mpvs?|auvs?|uvs?|sedans?|vehicles?|sasakyans?|saskyan|transport(?:ation)?|pick[\s-]*ups?|mini[\s-]*vans?|coasters?|buses?|jeeps?|(?:[2-9]|[1-5]\d)[\s-]*(?:seaters?|str|s)|innova|avanza|vios|ertiga|xpander|fortuner|hi[\s-]*ace|grandia|commuter|urvan|nv[\s-]*350|starex|montero|everest|terra|mirage|wigo|raize|rush|br[\s-]*v|cr[\s-]*v|almera|honda[\s-]*city|l[\s-]*300|apv|revo|adventure|crosswind|jimny|hilux|navara|ranger)`;
@@ -130,11 +144,22 @@ export function evaluateLeadEligibility(postText) {
     (text.match(VEHICLE_MODEL_NAME_PATTERN) ?? [])
       .map((value) => value.toLowerCase().replace(/\s+/g, ""))
   );
+  const phoneNumbers = new Set(
+    (text.match(PHONE_NUMBER_PATTERN) ?? [])
+      .map((value) => value.replace(/\D/g, ""))
+  );
+  const seatingCapacities = new Set(
+    (text.match(SEATING_CAPACITY_PATTERN) ?? [])
+      .map((value) => value.replace(/\D/g, ""))
+  );
   const providerAdSignalCount = PROVIDER_AD_SIGNAL_PATTERNS
     .filter((pattern) => pattern.test(text))
     .length +
-    Number(vehicleModels.size >= 2);
-  const providerSignalThreshold = hasExplicitBuyerIntent ? 3 : 2;
+    Number(vehicleModels.size >= 2) +
+    Number(phoneNumbers.size >= 2) +
+    Number(seatingCapacities.size >= 2) +
+    Number(seatingCapacities.size >= 3);
+  const providerSignalThreshold = hasExplicitBuyerIntent ? 4 : 2;
 
   if (
     PROVIDER_OFFER_PATTERN.test(text) ||

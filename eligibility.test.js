@@ -305,6 +305,92 @@ test("rejects the supplied seller-profile advertisement", () => {
   });
 });
 
+test("rejects a van-for-rent service advertisement with phone numbers", () => {
+  const result = evaluateLeadEligibility(
+    [
+      "VAN FOR RENT",
+      "TOYOTA HI ACE",
+      "For any occasions/events:",
+      "Out of town tours",
+      "Airport hatid sundo",
+      "Family outings or reunions",
+      "Company outings/teambuildings",
+      "And More",
+      "With own driver",
+      "No to self drive",
+      "Affordable rates",
+      "call",
+      "09637813746",
+      "09944094972"
+    ].join("\n")
+  );
+
+  assert.deepEqual(result, {
+    eligible: false,
+    reason: "provider_advertisement"
+  });
+});
+
+test("rejects a door-to-door transport service menu", () => {
+  const result = evaluateLeadEligibility(
+    [
+      "DOOR TO DOOR SERVICE",
+      "Van and SUV",
+      "Daily Byahe Vice Versa",
+      "Manila to Naga",
+      "Manila to Legazpi / Daraga",
+      "Manila to Tabaco",
+      "Manila to Pilar Sorsogon",
+      "Manila to Pioduran",
+      "Manila to Sorsogon City",
+      "Manila to Bulan",
+      "Manila to Matnog",
+      "Pampanga",
+      "Bulacan",
+      "Manila",
+      "Calabarzon",
+      "Camarines Sur",
+      "Camarines Norte",
+      "ALBAY",
+      "Sorsogon",
+      "Pasahero Pasabay",
+      "Arkila / Semi Arkila",
+      "Pet Padala",
+      "Bagahe Padala",
+      "DOCS Padala",
+      "Sundo / Hatid Airport (Naia Terminal)",
+      "FREE ADVANCE BOOKING",
+      "NO ADVANCE FEE / NO RESERVATION FEE",
+      "STRICTLY NO CANCELLATION",
+      "NO DOUBLE BOOKING",
+      "pm or call --09481326458",
+      "Safe and Legit since 2020"
+    ].join("\n")
+  );
+
+  assert.deepEqual(result, {
+    eligible: false,
+    reason: "provider_advertisement"
+  });
+});
+
+test("rejects an available-self-drive capacity advertisement", () => {
+  const result = evaluateLeadEligibility(
+    [
+      "AVAILABLE SELFDRIVE",
+      "5-Seaters",
+      "7-Seaters",
+      "15-16-Seaters",
+      "0939-185-4635"
+    ].join("\n")
+  );
+
+  assert.deepEqual(result, {
+    eligible: false,
+    reason: "provider_advertisement"
+  });
+});
+
 test("rejects combined provider booking and rate signals", () => {
   const examples = [
     "Vios rates start at 1200. DM for booking.",
@@ -340,6 +426,18 @@ test("allows buyer contact details without treating them as an ad", () => {
   assert.deepEqual(
     evaluateLeadEligibility(
       "LF Vios with professional driver tomorrow. Contact 0997 556 7447."
+    ),
+    {
+      eligible: true,
+      reason: "explicit_rental_buyer_intent"
+    }
+  );
+});
+
+test("allows a direct buyer request containing weak provider-like wording", () => {
+  assert.deepEqual(
+    evaluateLeadEligibility(
+      "LF van for rent with driver, affordable rate sana. Contact 0997 556 7447."
     ),
     {
       eligible: true,

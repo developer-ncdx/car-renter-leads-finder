@@ -38,6 +38,10 @@ Return false for:
   your date", "why you'll love", "with us", "serving you", or "promo"
 - seller profiles listing multiple vehicle models, business phone numbers,
   promotional hashtags, professional drivers, or free delivery
+- door-to-door transport menus, repeated route lists, passenger or package
+  delivery services, booking policies, and "available self-drive" inventories
+- declarative "van/car for rent" offers paired with affordable-rate wording,
+  capacity menus, or one or more business contact numbers
 - people looking for passengers, carpools, drivers to hire, jobs, or vehicles
   for sale
 - news, discussions, old stories, or ambiguous posts without buyer intent
