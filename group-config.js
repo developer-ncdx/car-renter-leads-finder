@@ -79,6 +79,31 @@
       : identifier.toLowerCase();
   }
 
+  function parseFacebookUrl(value) {
+    const input = String(value ?? "").trim();
+
+    if (!input) {
+      return null;
+    }
+
+    try {
+      const candidate = input.startsWith("/")
+        ? new URL(input, "https://www.facebook.com")
+        : new URL(
+          /^https?:\/\//i.test(input) ? input : `https://${input}`
+        );
+      const hostname = candidate.hostname.toLowerCase();
+      const isFacebook =
+        hostname === "facebook.com" ||
+        hostname === "www.facebook.com" ||
+        hostname === "m.facebook.com";
+
+      return isFacebook ? candidate : null;
+    } catch {
+      return null;
+    }
+  }
+
   function parseGroupId(value) {
     const input = String(value ?? "").trim();
 
@@ -91,22 +116,9 @@
     }
 
     try {
-      const candidate = /^https?:\/\//i.test(input)
-        ? input
-        : `https://${input}`;
-      const url = new URL(candidate);
-      const hostname = url.hostname.toLowerCase();
-      const isFacebook =
-        hostname === "facebook.com" ||
-        hostname === "www.facebook.com" ||
-        hostname === "m.facebook.com";
-
-      if (!isFacebook) {
-        return null;
-      }
-
+      const url = parseFacebookUrl(input);
       const encodedIdentifier =
-        url.pathname.match(/^\/groups\/([^/]+)(?:\/|$)/)?.[1];
+        url?.pathname.match(/^\/groups\/([^/]+)(?:\/|$)/)?.[1];
 
       if (!encodedIdentifier) {
         return null;
@@ -118,6 +130,114 @@
     } catch {
       return null;
     }
+  }
+
+  function parseGroupPostUrl(value) {
+    let candidate = String(value ?? "").trim();
+
+    for (let depth = 0; candidate && depth < 3; depth += 1) {
+      const url = parseFacebookUrl(candidate);
+
+      if (!url) {
+        return null;
+      }
+
+      const match = url.pathname.match(
+        /^\/groups\/([^/]+)\/(?:posts|permalink)\/(\d+)(?:\/|$)/i
+      );
+      const groupRouteMatch = url.pathname.match(
+        /^\/groups\/([^/]+)\/?$/i
+      );
+      const multiPermalinkPostId =
+        url.searchParams.get("multi_permalinks")?.match(/^\d+/)?.[0] ??
+        null;
+      const matchedGroupIdentifier = match?.[1] ?? groupRouteMatch?.[1];
+      const matchedPostId = match?.[2] ?? multiPermalinkPostId;
+
+      if (matchedGroupIdentifier && matchedPostId) {
+        const groupId = normalizeGroupIdentifier(
+          decodeURIComponent(matchedGroupIdentifier)
+        );
+
+        if (!groupId) {
+          return null;
+        }
+
+        const postId = matchedPostId;
+
+        return {
+          groupId,
+          postId,
+          postUrl:
+            `${canonicalGroupUrl(groupId)}posts/${postId}/`
+        };
+      }
+
+      const nestedUrl = ["href", "url", "u", "target"]
+        .map((name) => url.searchParams.get(name))
+        .find((nestedValue) => nestedValue);
+
+      if (!nestedUrl || nestedUrl === candidate) {
+        return null;
+      }
+
+      candidate = nestedUrl;
+    }
+
+    return null;
+  }
+
+  function parseGroupNotificationUrl(value) {
+    let candidate = String(value ?? "").trim();
+
+    for (let depth = 0; candidate && depth < 3; depth += 1) {
+      const url = parseFacebookUrl(candidate);
+
+      if (!url) {
+        return null;
+      }
+
+      const groupRouteMatch = url.pathname.match(
+        /^\/groups\/([^/]+)\/?$/i
+      );
+      const notificationId = url.searchParams.get("notif_id");
+
+      if (
+        groupRouteMatch &&
+        notificationId &&
+        /^[a-z0-9_-]{1,200}$/i.test(notificationId)
+      ) {
+        const groupId = normalizeGroupIdentifier(
+          decodeURIComponent(groupRouteMatch[1])
+        );
+
+        if (!groupId) {
+          return null;
+        }
+
+        url.protocol = "https:";
+        url.hostname = "www.facebook.com";
+        url.hash = "";
+
+        return {
+          groupId,
+          notificationId,
+          notificationUrl: url.toString()
+        };
+      }
+
+      const nestedUrl = ["href", "url", "u", "target"]
+        .map((name) => url.searchParams.get(name))
+        .find((nestedValue) => nestedValue);
+
+      if (!nestedUrl || nestedUrl === candidate) {
+        return null;
+      }
+
+      candidate = nestedUrl;
+    }
+
+    return null;
   }
 
   function canonicalGroupUrl(groupId) {
@@ -160,6 +280,8 @@
     normalizeGroupIds,
     normalizeGroups,
     parseGroupId,
+    parseGroupPostUrl,
+    parseGroupNotificationUrl,
     canonicalGroupUrl,
     loadGroups,
     saveGroups

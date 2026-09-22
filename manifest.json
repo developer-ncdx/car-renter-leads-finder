@@ -1,10 +1,12 @@
 {
   "manifest_version": 3,
   "name": "Live Facebook Lead Observer",
-  "version": "0.8.9",
-  "description": "Monitors Facebook groups for qualified rental leads and targeted job posts.",
+  "version": "0.9.9",
+  "description": "Monitors Facebook notifications and group tabs for qualified leads.",
   "permissions": [
-    "storage"
+    "alarms",
+    "storage",
+    "tabs"
   ],
   "host_permissions": [
     "http://127.0.0.1:8787/*"
@@ -22,6 +24,13 @@
         "https://www.facebook.com/groups/*"
       ],
       "js": ["group-config.js", "post-freshness.js", "content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.facebook.com/notifications*"
+      ],
+      "js": ["group-config.js", "notification-content.js"],
       "run_at": "document_idle"
     }
   ]

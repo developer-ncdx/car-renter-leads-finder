@@ -1,5 +1,6 @@
 import http from "node:http";
 
+import { createLeadContentKey } from "./dedupe.js";
 import { evaluateLeadEligibility } from "./eligibility.js";
 import {
   evaluateJobEligibility,
@@ -8,6 +9,7 @@ import {
 
 const MAX_BODY_BYTES = 64 * 1024;
 const DEDUPE_TTL_MS = 24 * 60 * 60 * 1000;
+const CONTENT_DEDUPE_TTL_MS = 6 * 60 * 60 * 1000;
 const MAX_DEDUPE_ENTRIES = 10_000;
 
 const RENTAL_SYSTEM_PROMPT = `
@@ -58,7 +60,8 @@ actively advertising a real job, contract, or freelance opening for at least
 one of these roles:
 - AI engineer, AI developer, AI specialist, ML engineer, or LLM developer
 - Bubble.io developer or Bubble developer
-- software developer or software engineer
+- software developer, software engineer, web developer, frontend developer,
+  backend developer, or full-stack developer
 - AI agent developer or AI agent engineer
 - agentic developer, engineer, or specialist
 - AI-assisted developer or engineer
@@ -164,6 +167,7 @@ if (!config.bypassLlm) {
 }
 
 const processedPostKeys = new Map();
+const processedContentKeys = new Map();
 let processingTail = Promise.resolve();
 let queueDepth = 0;
 
@@ -309,14 +313,25 @@ function validateLeadPayload(value) {
 }
 
 function pruneDedupeCache() {
-  const cutoff = Date.now() - DEDUPE_TTL_MS;
+  const now = Date.now();
+  const postCutoff = now - DEDUPE_TTL_MS;
+  const contentCutoff = now - CONTENT_DEDUPE_TTL_MS;
 
   for (const [key, addedAt] of processedPostKeys) {
     if (
-      addedAt < cutoff ||
+      addedAt < postCutoff ||
       processedPostKeys.size > MAX_DEDUPE_ENTRIES
     ) {
       processedPostKeys.delete(key);
+    }
+  }
+
+  for (const [key, addedAt] of processedContentKeys) {
+    if (
+      addedAt < contentCutoff ||
+      processedContentKeys.size > MAX_DEDUPE_ENTRIES
+    ) {
+      processedContentKeys.delete(key);
     }
   }
 }
@@ -615,6 +630,7 @@ async function handleLeadRequest(request, response) {
   const payload = validateLeadPayload(await readJson(request));
   const dedupeKey =
     `${payload.leadType}:${payload.groupId}:${payload.postId}`;
+  const contentKey = createLeadContentKey(payload);
 
   pruneDedupeCache();
 
@@ -622,13 +638,32 @@ async function handleLeadRequest(request, response) {
     sendJson(response, 200, {
       ok: true,
       duplicate: true,
+      duplicateReason: "post_id",
       isLead: null,
       telegramSent: false
     });
     return;
   }
 
-  processedPostKeys.set(dedupeKey, Date.now());
+  if (processedContentKeys.has(contentKey)) {
+    processedPostKeys.set(dedupeKey, Date.now());
+    console.info(
+      `[${payload.leadType}] Suppressed repeated content ` +
+      `group=${payload.groupId} post=${payload.postId}`
+    );
+    sendJson(response, 200, {
+      ok: true,
+      duplicate: true,
+      duplicateReason: "content",
+      isLead: null,
+      telegramSent: false
+    });
+    return;
+  }
+
+  const receivedAt = Date.now();
+  processedPostKeys.set(dedupeKey, receivedAt);
+  processedContentKeys.set(contentKey, receivedAt);
 
   try {
     const result = await enqueue(() => processLead(payload));
@@ -640,6 +675,7 @@ async function handleLeadRequest(request, response) {
     });
   } catch (error) {
     processedPostKeys.delete(dedupeKey);
+    processedContentKeys.delete(contentKey);
     throw error;
   }
 }
@@ -686,6 +722,7 @@ const server = http.createServer(async (request, response) => {
         model: config.bypassLlm ? null : config.openAiModel,
         queueDepth,
         dedupeEntries: processedPostKeys.size,
+        contentDedupeEntries: processedContentKeys.size,
         jobsTelegramConfigured: Boolean(
           config.telegramJobsToken && config.telegramJobsChatId
         )

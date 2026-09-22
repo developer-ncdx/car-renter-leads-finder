@@ -17,6 +17,35 @@
     return;
   }
 
+  const pageUrl = new URL(window.location.href);
+  const isNotificationExtraction =
+    pageUrl.searchParams.get("lead_observer_source") === "notification";
+  const requestedNotificationPostId =
+    isNotificationExtraction
+      ? pageUrl.searchParams.get("lead_observer_post")
+      : null;
+  const currentNotificationPostId = isNotificationExtraction
+    ? GroupConfig.parseGroupPostUrl(pageUrl.toString())?.postId ?? null
+    : null;
+  const notificationTargetPostId =
+    /^\d+$/.test(requestedNotificationPostId ?? "")
+      ? requestedNotificationPostId
+      : currentNotificationPostId;
+  let isNotificationExtractionTab = isNotificationExtraction;
+  let targetNotificationPostId = notificationTargetPostId;
+  const urlNotificationDetectedAt = pageUrl.searchParams.get(
+    "lead_observer_detected_at"
+  );
+  const urlNotificationDetectedAtMs = Date.parse(
+    urlNotificationDetectedAt ?? ""
+  );
+  let notificationDetectedAt = Number.isFinite(urlNotificationDetectedAtMs)
+    ? new Date(urlNotificationDetectedAtMs).toISOString()
+    : null;
+  let allowNotificationFreshnessFallback =
+    pageUrl.searchParams.get("lead_observer_fresh") === "1" &&
+    Boolean(notificationDetectedAt);
+
   const CONFIG = Object.freeze({
     groupId: activeGroupId,
     scanThrottleMs: 350,
@@ -29,14 +58,12 @@
     maxPostAgeMs: PostFreshness.DEFAULT_MAX_AGE_MS,
     timestampRetryMs: 30_000,
     timestampRetryWindowMs: PostFreshness.DEFAULT_MAX_AGE_MS,
+    notificationPageTimeoutMs: 60_000,
     processedTtlMs: 7 * 24 * 60 * 60 * 1000,
     maxStoredPostIds: 1000,
     persistDebounceMs: 1000,
     pillClickMinDelayMs: 3000,
-    pillClickMaxDelayMs: 12_000,
-    fallbackRefreshMinDelayMs: 60_000,
-    fallbackRefreshMaxDelayMs: 120_000,
-    fallbackActivityCooldownMs: 60_000
+    pillClickMaxDelayMs: 12_000
   });
 
   const LOG_PREFIX = "[Live Facebook Lead Observer]";
@@ -59,6 +86,11 @@
   const POST_LINK_SELECTOR =
     'a[href*="/groups/"][href*="/posts/"], ' +
     'a[href*="/groups/"][href*="/permalink/"]';
+  const POST_MESSAGE_SELECTOR =
+    '[data-ad-rendering-role="story_message"], ' +
+    '[data-ad-preview="message"], ' +
+    '[data-ad-comet-preview="message"], ' +
+    '[data-testid="post_message"]';
 
   const processedPostIds = new Map();
   const pendingPostIds = new Set();
@@ -71,18 +103,17 @@
   let lastPillNoticeAt = 0;
   let persistTimer = null;
   let pillClickPending = false;
-  let fallbackRefreshTimer = null;
-  let deliveriesInFlight = 0;
-  let lastRelevantFeedActivityAt = Date.now();
   let monitoringEnabled = false;
   let activeLeadType = null;
   let observerStarted = false;
   let observerStartPending = false;
   let chronologicalRedirectPending = false;
+  let notificationDeliveryStarted = false;
+  let notificationOutcomeReported = false;
 
   function processedStorageKey() {
     return activeLeadType === GroupConfig.GROUP_TYPES.JOB
-      ? `processedJobPosts:v3:${CONFIG.groupId}`
+      ? `processedJobPosts:v4:${CONFIG.groupId}`
       : `processedPosts:v7:${CONFIG.groupId}`;
   }
 
@@ -242,8 +273,35 @@
     }
   }
 
+  function findNotificationFallbackAnchor() {
+    const currentPostId =
+      GroupConfig.parseGroupPostUrl(window.location.href)?.postId ?? null;
+
+    if (
+      !targetNotificationPostId ||
+      currentPostId !== targetNotificationPostId
+    ) {
+      return null;
+    }
+
+    const dialog = document.querySelector('[role="dialog"]');
+
+    if (!dialog) {
+      return null;
+    }
+
+    return dialog.querySelector(POST_MESSAGE_SELECTOR);
+  }
+
   function collectPostCandidates(root = document) {
     const anchors = [];
+    const currentTargetPostId =
+      targetNotificationPostId ||
+      (
+        isNotificationExtractionTab
+          ? GroupConfig.parseGroupPostUrl(window.location.href)?.postId ?? null
+          : null
+      );
 
     if (root instanceof Element && root.matches(POST_LINK_SELECTOR)) {
       anchors.push(root);
@@ -259,12 +317,42 @@
     for (const anchor of anchors) {
       const parsed = parsePostLink(anchor.getAttribute("href"));
 
-      if (parsed && !candidates.has(parsed.postId)) {
+      if (
+        parsed &&
+        (
+          !currentTargetPostId ||
+          parsed.postId === currentTargetPostId
+        ) &&
+        !candidates.has(parsed.postId)
+      ) {
         candidates.set(parsed.postId, { ...parsed, anchor });
       }
     }
 
-    return [...candidates.values()];
+    if (
+      isNotificationExtractionTab &&
+      currentTargetPostId &&
+      !candidates.has(currentTargetPostId)
+    ) {
+      const fallbackAnchor = findNotificationFallbackAnchor();
+
+      if (fallbackAnchor) {
+        candidates.set(currentTargetPostId, {
+          postId: currentTargetPostId,
+          postUrl:
+            `https://www.facebook.com/groups/${CONFIG.groupId}/posts/` +
+            `${currentTargetPostId}/`,
+          anchor: fallbackAnchor,
+          inferredFromPage: true
+        });
+      }
+    }
+
+    const candidateList = [...candidates.values()];
+
+    return isNotificationExtractionTab && !currentTargetPostId
+      ? candidateList.slice(0, 1)
+      : candidateList;
   }
 
   function findPostContainer(anchor) {
@@ -303,11 +391,6 @@
     const now = Date.now();
     const directTimestampValues = new Set();
     const validPermalinkAnchors = [];
-    const postMessageSelector =
-      '[data-ad-rendering-role="story_message"], ' +
-      '[data-ad-preview="message"], ' +
-      '[data-ad-comet-preview="message"], ' +
-      '[data-testid="post_message"]';
     const permalinkAnchors = [
       candidate.anchor,
       ...container.querySelectorAll(POST_LINK_SELECTOR)
@@ -389,7 +472,7 @@
         depth < 4;
         depth += 1
       ) {
-        if (headerAncestor.querySelector(postMessageSelector)) {
+        if (headerAncestor.querySelector(POST_MESSAGE_SELECTOR)) {
           break;
         }
 
@@ -440,9 +523,7 @@
       "h2 strong",
       "h3 strong",
       'strong a[role="link"]',
-      'a[role="link"] strong',
-      "h2",
-      "h3"
+      'a[role="link"] strong'
     ];
 
     for (const selector of selectors) {
@@ -477,19 +558,13 @@
   }
 
   function extractPostText(container, permalinkAnchor, authorName) {
-    const directMessageSelectors = [
-      '[data-ad-rendering-role="story_message"]',
-      '[data-ad-preview="message"]',
-      '[data-ad-comet-preview="message"]',
-      '[data-testid="post_message"]'
-    ];
     const directElements = new Set();
 
-    for (const selector of directMessageSelectors) {
-      for (const element of container.querySelectorAll(selector)) {
-        if (belongsToPostContainer(element, container)) {
-          directElements.add(element);
-        }
+    for (const element of container.querySelectorAll(
+      POST_MESSAGE_SELECTOR
+    )) {
+      if (belongsToPostContainer(element, container)) {
+        directElements.add(element);
       }
     }
 
@@ -635,7 +710,9 @@
   }
 
   function emitNewPost(payload) {
-    lastRelevantFeedActivityAt = Date.now();
+    if (isNotificationExtractionTab) {
+      notificationDeliveryStarted = true;
+    }
 
     console.groupCollapsed(
       `${LOG_PREFIX} New post from ${payload.authorName}`
@@ -643,18 +720,16 @@
     console.info("NEW_POST", payload);
     console.groupEnd();
 
-    deliveriesInFlight += 1;
-
     chrome.runtime.sendMessage(
       {
         type: "NEW_POST",
         payload
       },
       (response) => {
-        deliveriesInFlight = Math.max(0, deliveriesInFlight - 1);
         const runtimeError = chrome.runtime.lastError;
 
         if (runtimeError) {
+          notificationDeliveryStarted = false;
           pendingPostIds.delete(payload.postId);
           schedulePostRetry(payload.postId, CONFIG.deliveryRetryMs);
           console.error(
@@ -665,6 +740,7 @@
         }
 
         if (!response?.ok) {
+          notificationDeliveryStarted = false;
           pendingPostIds.delete(payload.postId);
           schedulePostRetry(payload.postId, CONFIG.deliveryRetryMs);
           console.error(
@@ -694,6 +770,52 @@
         }
       }
     );
+  }
+
+  async function reportNotificationOutcome(status, postId, details = {}) {
+    notificationOutcomeReported = true;
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: "NOTIFICATION_EXTRACTION_OUTCOME",
+        payload: {
+          status,
+          postId,
+          ...details
+        }
+      });
+
+      if (!response?.ok) {
+        throw new Error(response?.error || "notification bridge unavailable");
+      }
+    } catch (error) {
+      notificationOutcomeReported = false;
+      console.warn(
+        `${LOG_PREFIX} Could not report ${status} post ${postId}: ` +
+        error.message
+      );
+    }
+  }
+
+  function startNotificationPageWatchdog() {
+    if (!isNotificationExtractionTab) {
+      return;
+    }
+
+    window.setTimeout(() => {
+      if (notificationOutcomeReported || notificationDeliveryStarted) {
+        return;
+      }
+
+      reportNotificationOutcome(
+        "failed",
+        targetNotificationPostId ?? "",
+        {
+          error:
+            "Facebook did not expose readable post content within 60 seconds"
+        }
+      );
+    }, CONFIG.notificationPageTimeoutMs);
   }
 
   function queueExtraction(candidate) {
@@ -729,7 +851,7 @@
         return;
       }
 
-      const freshness = currentCandidate && container
+      let freshness = currentCandidate && container
         ? extractPostFreshness(currentCandidate, container)
         : null;
 
@@ -741,7 +863,36 @@
           `${LOG_PREFIX} Skipped post ${candidate.postId} because it is ` +
           `${ageMinutes} minutes old (20-minute limit).`
         );
+
+        if (isNotificationExtractionTab) {
+          reportNotificationOutcome("stale", candidate.postId, {
+            ageMinutes
+          });
+        }
+
         return;
+      }
+
+      if (
+        freshness?.status === "unknown" &&
+        attempts >= CONFIG.maxExtractionAttempts &&
+        allowNotificationFreshnessFallback &&
+        notificationDetectedAt
+      ) {
+        const detectedAtMs = Date.parse(notificationDetectedAt);
+        const ageMs = Math.max(0, Date.now() - detectedAtMs);
+
+        if (ageMs < CONFIG.maxPostAgeMs) {
+          freshness = {
+            status: "fresh",
+            publishedAt: notificationDetectedAt,
+            ageMs
+          };
+          console.info(
+            `${LOG_PREFIX} Using the new-post notification time for post ` +
+            `${candidate.postId} because Facebook omitted its post timestamp.`
+          );
+        }
       }
 
       if (
@@ -909,7 +1060,6 @@
 
     if (pill && Date.now() - lastPillNoticeAt > 5000) {
       lastPillNoticeAt = Date.now();
-      lastRelevantFeedActivityAt = Date.now();
       clickNewPostsPill(pill);
     }
   }
@@ -947,81 +1097,29 @@
     }, delay);
   }
 
-  function hasFocusedEditor() {
-    const activeElement = document.activeElement;
-
-    if (!(activeElement instanceof Element)) {
-      return false;
-    }
-
-    return Boolean(
-      activeElement.closest(
-        'input, textarea, [contenteditable="true"], [role="textbox"]'
-      )
-    );
-  }
-
-  function scheduleFallbackRefresh() {
-    if (fallbackRefreshTimer !== null || !isGroupFeedRoute()) {
-      return;
-    }
-
-    const spread =
-      CONFIG.fallbackRefreshMaxDelayMs -
-      CONFIG.fallbackRefreshMinDelayMs;
-    const delay =
-      CONFIG.fallbackRefreshMinDelayMs +
-      Math.floor(Math.random() * (spread + 1));
-
-    console.info(
-      `${LOG_PREFIX} Fallback refresh scheduled in ` +
-      `${Math.round(delay / 1000)} seconds.`
-    );
-
-    fallbackRefreshTimer = window.setTimeout(() => {
-      fallbackRefreshTimer = null;
-
-      if (!isGroupFeedRoute()) {
-        return;
-      }
-
-      const feedWasRecentlyActive =
-        Date.now() - lastRelevantFeedActivityAt <
-        CONFIG.fallbackActivityCooldownMs;
-      const shouldPostpone =
-        feedWasRecentlyActive ||
-        pendingPostIds.size > 0 ||
-        deliveriesInFlight > 0 ||
-        pillClickPending ||
-        hasFocusedEditor();
-
-      if (shouldPostpone) {
-        console.info(
-          `${LOG_PREFIX} Fallback refresh postponed because the feed ` +
-          "is active or the page is being used."
-        );
-        scheduleFallbackRefresh();
-        return;
-      }
-
-      console.info(
-        `${LOG_PREFIX} No recent live-feed update; performing the ` +
-        "conservative fallback refresh."
-      );
-      window.location.reload();
-    }, delay);
-  }
-
   function logReady() {
     const typeLabel = activeLeadType === GroupConfig.GROUP_TYPES.JOB
       ? "job posts"
       : "car-rental leads";
+
+    if (isNotificationExtractionTab) {
+      console.info(
+        targetNotificationPostId
+          ? `${LOG_PREFIX} Ready to extract notification-linked post ` +
+            `${targetNotificationPostId} for ${typeLabel}.`
+          : `${LOG_PREFIX} Ready to resolve one notification-linked post ` +
+            `for ${typeLabel}.`
+      );
+      startReconciliationScan();
+      startNotificationPageWatchdog();
+      return;
+    }
+
     console.info(
       `${LOG_PREFIX} Ready. Every unseen post loaded in this monitored ` +
       `tab will be checked for ${typeLabel}.`
     );
     startReconciliationScan();
-    scheduleFallbackRefresh();
   }
 
   function startObserver(hasStoredHistory) {
@@ -1076,8 +1174,44 @@
     logReady();
   }
 
+  async function loadNotificationExtractionContext() {
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: "GET_NOTIFICATION_EXTRACTION_CONTEXT"
+      });
+
+      if (response?.isNotificationExtraction) {
+        isNotificationExtractionTab = true;
+
+        if (/^\d+$/.test(response.postId ?? "")) {
+          targetNotificationPostId = response.postId;
+        } else {
+          targetNotificationPostId =
+            GroupConfig.parseGroupPostUrl(window.location.href)?.postId ??
+            targetNotificationPostId;
+        }
+
+        const detectedAtMs = Date.parse(
+          response.notificationDetectedAt ?? ""
+        );
+
+        if (
+          response.allowFreshnessFallback === true &&
+          Number.isFinite(detectedAtMs)
+        ) {
+          notificationDetectedAt = new Date(detectedAtMs).toISOString();
+          allowNotificationFreshnessFallback = true;
+        }
+      }
+    } catch {
+      // Normal group tabs do not require notification extraction context.
+    }
+  }
+
   async function start() {
     let hasStoredHistory = false;
+
+    await loadNotificationExtractionContext();
 
     try {
       hasStoredHistory = await loadProcessedPosts();
@@ -1085,6 +1219,22 @@
       console.warn(
         `${LOG_PREFIX} Could not read stored post history: ${error.message}`
       );
+    }
+
+    if (
+      isNotificationExtractionTab &&
+      targetNotificationPostId &&
+      processedPostIds.has(targetNotificationPostId)
+    ) {
+      console.info(
+        `${LOG_PREFIX} Notification-linked post ` +
+        `${targetNotificationPostId} was already processed.`
+      );
+      await reportNotificationOutcome(
+        "duplicate",
+        targetNotificationPostId
+      );
+      return;
     }
 
     if (!monitoringEnabled) {
@@ -1103,11 +1253,6 @@
     if (!shouldMonitor) {
       if (monitoringEnabled) {
         monitoringEnabled = false;
-
-        if (fallbackRefreshTimer !== null) {
-          window.clearTimeout(fallbackRefreshTimer);
-          fallbackRefreshTimer = null;
-        }
 
         stopReconciliationScan();
 
@@ -1157,7 +1302,6 @@
       );
       scheduleScan();
       startReconciliationScan();
-      scheduleFallbackRefresh();
       return;
     }
 

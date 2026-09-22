@@ -2,8 +2,10 @@
 
 Local pipeline that monitors allowlisted Facebook group tabs and routes either
 car-rental leads or targeted technology job openings to separate Telegram
-groups. It uses live DOM updates first and a conservative randomized refresh
-when Facebook does not update a tab.
+groups. It watches Facebook's in-page notification list for links or
+notification IDs that resolve to new group posts and also observes live DOM
+updates in any open group tabs.
+It does not automatically refresh Facebook pages.
 
 ## Prerequisites
 
@@ -81,25 +83,38 @@ buttons and type badges. Selecting a different type for an existing group
 updates its routing. Group settings are saved locally in the browser. Existing
 groups are migrated as **Car rental** during the upgrade.
 
-### 6. Open monitored Facebook tabs
+### 6. Enable notification-driven monitoring
 
-1. Open one authenticated tab per configured Facebook group.
-2. Leave each group open in its own tab.
-3. Add Facebook to the browser's **Never put these sites to sleep** list.
-4. Reload each group tab once after installing or updating the extension.
+1. In each configured Facebook group, open **Manage notifications** and select
+   **All posts**.
+2. Open `https://www.facebook.com/notifications/` in one authenticated tab.
+3. Add Facebook to the browser's **Always keep these sites active** or
+   **Never put these sites to sleep** list.
+4. Reload the Notifications tab once after installing or updating the
+   extension.
+5. Keep that Notifications tab open. Existing notifications become the
+   baseline; only links that appear afterward are handled.
 
-The extension automatically switches monitored group feeds to **New Posts** so
-Facebook's selected relevance filter cannot hide chronological arrivals.
-
-Open the tab's DevTools Console and look for:
+Open the Notifications tab's DevTools Console and look for:
 
 ```text
-[Live Facebook Lead Observer] Ready...
+[Lead Notifications] Ready with 3 monitored groups. Existing notifications were used as the baseline.
 ```
 
-The extension automatically clicks Facebook's **New posts** button. If
-Facebook provides no live update, each tab uses a staggered fallback refresh
-after 60–120 seconds.
+When Facebook inserts an explicit new-post notification containing either a
+direct post link or a group notification ID for a monitored group, the
+extension opens that target in an inactive temporary tab. Comment, reaction,
+and other group notifications are ignored.
+The existing post extractor verifies freshness, sends the post through the
+configured rental or job pipeline, and closes the temporary tab. At most two
+temporary extraction tabs are allowed at once, and abandoned tabs close after
+three minutes. The Notifications console then reports whether each post was
+sent to Telegram, rejected, stale, already processed, failed, or timed out.
+
+Opening each monitored group in its own tab remains optional. Those tabs still
+provide live DOM detection, automatically switch the feed to **New Posts**, and
+click Facebook's **New posts** button when it appears. They are never refreshed
+on a timer.
 
 ### 7. Verify filtering
 
@@ -126,12 +141,13 @@ and duration context also lets GPT review unfamiliar wording instead of
 rejecting it immediately.
 
 Job groups accept genuine hiring, contract, and freelance posts for AI
-engineers, Bubble.io developers, software developers, AI-agent or agentic
-developers, AI-assisted developers, AI specialists, and automation engineers
-or developers. Job-seeker posts, courses, and service advertisements are
-rejected. Short explicit captions such as `Looking for software engineer`,
-`Need AI engineer`, and `Hiring Bubble developer` are accepted directly after
-the job-seeker and service-ad guardrails pass.
+engineers, Bubble.io developers, software, web, frontend, backend, and
+full-stack developers, AI-agent or agentic developers, AI-assisted developers,
+AI specialists, and automation engineers or developers. Job-seeker posts,
+courses, and service advertisements are rejected. Short explicit captions
+such as `Looking for software engineer`, `Need AI engineer`, and
+`Hiring Bubble developer` are accepted directly after the job-seeker and
+service-ad guardrails pass.
 
 Run the regression suite:
 
@@ -142,7 +158,9 @@ npm test
 ## Runtime architecture
 
 ```text
-Facebook content script
+Facebook Notifications content script
+→ inactive Facebook post tab
+→ Facebook post content script
 → Chrome extension service worker
 → http://127.0.0.1:8787
 → group type routing
@@ -152,9 +170,23 @@ Facebook content script
 
 ## Verify it is running
 
-1. Open Chrome DevTools on the Facebook group tab.
+1. Open Chrome DevTools on the Facebook Notifications tab.
 2. Select the **Console** panel.
-3. Filter for `Live Facebook Lead Observer`.
+3. Filter for `Lead Notifications`.
+
+After reloading that tab, the console should show:
+
+```text
+[Lead Notifications] Ready with 3 monitored groups. Existing notifications were used as the baseline.
+```
+
+Have another account publish a fresh post in a monitored group. If Facebook
+adds a direct post link to the in-page notification list, the console reports
+that it opened the post for extraction. Existing notifications present before
+the `Ready` message are intentionally ignored.
+
+For optional live-feed detection, open DevTools on a monitored group tab and
+filter for `Live Facebook Lead Observer`.
 
 At startup, the extension restores handled post IDs and inspects other posts
 currently loaded in the page. Only posts with a verified Facebook timestamp
@@ -184,24 +216,28 @@ When Facebook inserts a new post, the console logs a `NEW_POST` payload:
 With bypass testing enabled, every detected new post is sent to Telegram with a
 test-mode heading. Use this mode briefly in an active group.
 
-Facebook usually holds new posts behind a **New posts** button rather than
-inserting them into the feed. The extension waits a randomized 3 to 12 seconds,
-scrolls back to the top, and clicks that button itself.
-
-If Facebook provides neither a DOM update nor a button, the extension performs
-a fallback page refresh after a randomized 60 to 120 seconds. Each tab chooses
-its own delay, which staggers multiple monitored groups. The refresh is
-postponed while a post is being processed, a button click is pending, or the
-user is typing on the page. Persistent post history prevents duplicate alerts.
+Facebook usually holds new feed posts behind a **New posts** button rather than
+inserting them directly. In an optional group tab, the extension waits a
+randomized 3 to 12 seconds, scrolls to the top, and clicks that button.
+Notification-driven extraction does not depend on that feed button, but it
+does depend on Facebook delivering an in-page group notification that Facebook
+can resolve to the post.
 
 ## Detection safeguards
 
 - Uses the post ID as the deduplication key, stored for seven days after the
   post is handled or skipped by the freshness rule.
+- Suppresses identical author-and-post content for six hours even when
+  Facebook exposes it under different post IDs.
 - Converts links to a canonical URL without tracking parameters.
 - Inspects every unseen post loaded in the page, regardless of its position,
   but only classifies posts verified to be less than 20 minutes old.
 - Reads timestamp evidence from permalink metadata and anonymous-post headers.
+- Uses the arrival time of an explicit **new post** notification when the
+  temporary Facebook post page omits its timestamp.
+- Extracts a notification-linked post without its own permalink only when the
+  content is inside the verified direct-post dialog; unrelated page content is
+  never assigned to the requested post ID.
 - Retries unverified timestamps every 30 seconds for up to 20 minutes instead
   of permanently skipping them on the first extraction failure.
 - Reconciles the loaded page every five seconds in addition to observing live
@@ -212,17 +248,29 @@ user is typing on the page. Persistent post history prevents duplicate alerts.
 - Automatically enforces chronological **New Posts** sorting.
 - Never tries to reveal an anonymous poster's real identity.
 - Waits a randomized delay before clicking, avoiding a fixed machine cadence.
-- Uses the 60-to-120-second refresh only as a fallback when the live feed has
-  shown no recent activity.
+- Never automatically refreshes Facebook pages.
+- Processes at most two notification-linked post tabs concurrently and closes
+  each temporary tab after processing or a three-minute timeout.
 
 Facebook can only be scanned for posts it actually loads into the tab. The
-chronological sort and fallback refresh maximize coverage, but posts hidden by
-Facebook's servers are not present in the DOM and cannot be observed.
+notification path is best-effort: Facebook may delay, combine, or omit
+notifications, and an operating-system banner alone cannot be read by the
+extension. Posts that Facebook exposes through neither the notification DOM
+nor an open group tab cannot be observed.
 
 ## Troubleshooting
 
 - **No startup logs:** Reload the group tab after loading or updating the
   extension and confirm the group appears in the extension popup.
+- **No notification observer log:** Keep
+  `https://www.facebook.com/notifications/` open, reload it after updating the
+  extension, and filter its Console for `Lead Notifications`.
+- **A group notification is missing:** Confirm **All posts** is enabled for
+  that specific group. Facebook does not guarantee delivery of every
+  notification.
+- **Only a macOS or Windows banner appears:** Browser extensions cannot read
+  another application's operating-system notifications; the notification
+  must also appear in Facebook's in-page notification list with a post link.
 - **Existing posts are processed after changing type:** Rental and job groups
   keep separate acknowledged-post histories.
 - **A New posts button appears:** The extension clicks it within 12 seconds. If

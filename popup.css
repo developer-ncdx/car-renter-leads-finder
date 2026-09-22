@@ -315,3 +315,8 @@ footer {
   font-size: 11px;
   line-height: 1.45;
 }
+
+footer a {
+  color: #2563eb;
+  font-weight: 700;
+}

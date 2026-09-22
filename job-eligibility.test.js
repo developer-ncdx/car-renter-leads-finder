@@ -11,6 +11,10 @@ test("accepts hiring posts for every configured job family", () => {
     "We're hiring an AI Engineer for a remote full-time role.",
     "Looking for a Bubble.io developer to join our team.",
     "Software developer position available. Apply now.",
+    "Hiring: Web Developer – 1 Position. Join our team in Manila.",
+    "We're hiring a frontend developer for our website.",
+    "Backend engineer position available.",
+    "Seeking a full-stack developer for a contract role.",
     "Hiring an AI agent developer for a new product.",
     "Agentic AI developer needed for a contract role.",
     "Seeking an AI-assisted developer for our internal tools.",
@@ -70,7 +74,8 @@ test("rejects job seekers for target roles", () => {
     "Hire me as your Bubble developer.",
     "Automation developer available for work.",
     "Looking for clients as a software developer.",
-    "Looking for software engineer job."
+    "Looking for software engineer job.",
+    "Looking for a web developer job."
   ];
 
   for (const example of examples) {
