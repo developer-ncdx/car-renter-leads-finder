@@ -113,8 +113,8 @@
 
   function processedStorageKey() {
     return activeLeadType === GroupConfig.GROUP_TYPES.JOB
-      ? `processedJobPosts:v4:${CONFIG.groupId}`
-      : `processedPosts:v7:${CONFIG.groupId}`;
+      ? `processedJobPosts:v5:${CONFIG.groupId}`
+      : `processedPosts:v8:${CONFIG.groupId}`;
   }
 
   async function loadProcessedPosts() {
@@ -861,7 +861,7 @@
         markProcessed(candidate.postId);
         console.info(
           `${LOG_PREFIX} Skipped post ${candidate.postId} because it is ` +
-          `${ageMinutes} minutes old (20-minute limit).`
+          `${ageMinutes} minutes old (50-minute limit).`
         );
 
         if (isNotificationExtractionTab) {
@@ -916,7 +916,7 @@
           markProcessed(candidate.postId);
           console.warn(
             `${LOG_PREFIX} Stopped retrying post ${candidate.postId} after ` +
-            "its Facebook timestamp remained unavailable for 20 minutes."
+            "its Facebook timestamp remained unavailable for 50 minutes."
           );
         } else {
           schedulePostRetry(

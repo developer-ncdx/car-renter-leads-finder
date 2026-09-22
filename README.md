@@ -190,7 +190,7 @@ filter for `Live Facebook Lead Observer`.
 
 At startup, the extension restores handled post IDs and inspects other posts
 currently loaded in the page. Only posts with a verified Facebook timestamp
-younger than 20 minutes proceed to eligibility checking. The console should
+younger than 50 minutes proceed to eligibility checking. The console should
 then show:
 
 ```text
@@ -231,14 +231,14 @@ can resolve to the post.
   Facebook exposes it under different post IDs.
 - Converts links to a canonical URL without tracking parameters.
 - Inspects every unseen post loaded in the page, regardless of its position,
-  but only classifies posts verified to be less than 20 minutes old.
+  but only classifies posts verified to be less than 50 minutes old.
 - Reads timestamp evidence from permalink metadata and anonymous-post headers.
 - Uses the arrival time of an explicit **new post** notification when the
   temporary Facebook post page omits its timestamp.
 - Extracts a notification-linked post without its own permalink only when the
   content is inside the verified direct-post dialog; unrelated page content is
   never assigned to the requested post ID.
-- Retries unverified timestamps every 30 seconds for up to 20 minutes instead
+- Retries unverified timestamps every 30 seconds for up to 50 minutes instead
   of permanently skipping them on the first extraction failure.
 - Reconciles the loaded page every five seconds in addition to observing live
   DOM changes.

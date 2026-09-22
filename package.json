@@ -1,6 +1,6 @@
 {
   "name": "fb-group-lead-sniper",
-  "version": "0.9.9",
+  "version": "0.10.0",
   "private": true,
   "type": "module",
   "description": "Local Facebook group observer and Telegram lead notifier.",

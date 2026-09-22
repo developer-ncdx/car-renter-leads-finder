@@ -282,7 +282,7 @@
     if (payload.status === "stale") {
       console.info(
         `${LOG_PREFIX} ${postLabel} was skipped because it is ` +
-        `${payload.ageMinutes ?? "more than 20"} minutes old.`
+        `${payload.ageMinutes ?? "at least 50"} minutes old.`
       );
       return;
     }

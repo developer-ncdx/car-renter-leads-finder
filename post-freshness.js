@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const DEFAULT_MAX_AGE_MS = 20 * 60 * 1000;
+  const DEFAULT_MAX_AGE_MS = 50 * 60 * 1000;
   const FUTURE_TOLERANCE_MS = 5 * 60 * 1000;
 
   const UNIT_MULTIPLIERS = Object.freeze({
