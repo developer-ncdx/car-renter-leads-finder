@@ -131,8 +131,12 @@ Seller profiles are also recognized from combinations of vehicle lists,
 business phone numbers, promotional hashtags, professional-driver offers, and
 free delivery. Door-to-door service menus, booking policies, capacity menus,
 route advertisements, and declarative **available self-drive** offers are
-rejected as well. Explicit buyer requests require stronger seller evidence
-before being rejected. GPT performs the final intent check. Common English,
+rejected as well. Promo-rate listings that direct readers to a Facebook page,
+advertise rental dates, or use dense rental hashtags are also rejected.
+Monthly-rental promotions with customer menus, delivery offers, flexible
+periods, or rhetorical renter questions are treated as provider ads.
+Explicit buyer requests require stronger seller evidence before being
+rejected. GPT performs the final intent check. Common English,
 Filipino, and Taglish shorthand is supported,
 including `LF`, `L/F`, `LF4`, `LFR`, `ISO`, `HM`, `H/M`, `LP`, `qte`,
 `paquote`, `reco`, `avail`, `rnt`, `s/d`, `w/ drv`, and common misspellings.

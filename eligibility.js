@@ -2,10 +2,10 @@ const NON_RENTER_PATTERN =
   /\b(?:looking\s+for|lf|need(?:ed)?)\s+(?:\d+\s+)?(?:passengers?|joiners?)\b|\b(?:passengers?|joiners?)\s+(?:needed|wanted)\b|\b(?:hiring|looking\s+for|lf)\s+(?:a\s+)?drivers?\b|\bdriver\s+(?:hiring|job|applicant)\b/i;
 
 const PROVIDER_OFFER_PATTERN =
-  /\bour\s+(?:fleet|units?|cars?|vehicles?|rates?|services?)\b|\bwe\s+(?:offer|provide|accept|have\s+available)\b|\bwe\s+(?:still\s+)?have\s+(?:available\s+)?units?\b|\b(?:accepting|open\s+for)\s+(?:advance\s+)?bookings?\b|\b(?:book|reserve)\s+now\b|\b(?:reserve|secure)\s+(?:yours?|your\s+(?:ride|unit|slot))\s+now\b|\bfor\s+(?:reservations?|inquiries)(?:\s+or\s+(?:reservations?|inquiries))?\b|\b(?:text|call)(?:\s+or\s+(?:text|call))?\s+for\s+(?:bookings?|reservations?|inquiries)\b|\b(?:send|message|contact|pm)\s+us\b|\bwhy\s+choose\s+us\b|\bdriver'?s\s+fee\b|\b(?:daily|weekly|monthly|hourly)\s+rates?\b|\blowest\s+(?:car\s+rental\s+)?rates?\b|\bbooking\s+slots?\b|\bavailable\s+on\s+(?:whatsapp|viber|telegram)\b|\b(?:rent|book)\s+with\s+us\b/i;
+  /\bour\s+(?:fleet|units?|cars?|vehicles?|rates?|services?)\b|\bour\b.{0,40}\brental\s+(?:options?|packages?|plans?|periods?)\b|\bask\s+about\s+our\b|\bwe\s+(?:offer|provide|accept|have\s+available)\b|\bwe\s+(?:still\s+)?have\s+(?:available\s+)?units?\b|\byour\s+rental\s+(?:car|vehicle)\s+can\s+be\s+delivered\b|\b(?:accepting|open\s+for)\s+(?:advance\s+)?bookings?\b|\b(?:book|reserve)\s+now\b|\b(?:reserve|secure)\s+(?:yours?|your\s+(?:ride|unit|slot))\s+now\b|\bfor\s+(?:reservations?|inquiries)(?:\s+or\s+(?:reservations?|inquiries))?\b|\b(?:text|call)(?:\s+or\s+(?:text|call))?\s+for\s+(?:bookings?|reservations?|inquiries)\b|\b(?:send|message|contact|pm)\s+us\b|\b(?:pm|message)\s+(?:our\s+)?(?:fb|facebook)\s+page\b|\bwhy\s+choose\s+us\b|\bdriver'?s\s+fee\b|\b(?:daily|weekly|monthly|hourly)\s+rates?\b|\blowest\s+(?:car\s+rental\s+)?rates?\b|\bbooking\s+slots?\b|\bavailable\s+on\s+(?:whatsapp|viber|telegram)\b|\b(?:rent|book)\s+with\s+us\b|\bbook\s+(?:your\s+)?(?:travel\s+)?dates?\b/i;
 
 const STRONG_PROVIDER_AD_PATTERN =
-  /\b(?:rates?|prices?)\s+(?:start|starts|starting)\s+(?:at|from|@)\s+(?:₱|php|p)?\s*\d|\b(?:dm|pm|message|contact)\s+(?:(?:me|us)\s+)?for\s+(?:bookings?|reservations?|rates?|details?|inquiries)\b/i;
+  /\b(?:rates?|prices?)\s+(?:start|starts|starting)\s+(?:at|from|@)\s+(?:₱|php|p)?\s*\d|\b(?:promo\s+)?rates?\s+(?:is|are|:|-)\s*(?:₱|php|p)?\s*[\d,]+|\b(?:dm|pm|message|contact)\s+(?:(?:me|us)\s+)?for\s+(?:bookings?|reservations?|rates?|details?|inquiries)\b/i;
 
 const PROVIDER_AD_SIGNAL_PATTERNS = Object.freeze([
   /\b(?:accept|accepts|accepting|taking)\s+(?:advance\s+)?bookings?\b/i,
@@ -47,7 +47,15 @@ const PROVIDER_AD_SIGNAL_PATTERNS = Object.freeze([
   /\b(?:daily\s+byahe|vice\s+versa|pasahero\s+pasabay|pet\s+padala|bagahe\s+padala|docs?\s+padala)\b/i,
   /\b(?:free\s+advance\s+booking|no\s+(?:advance|reservation)\s+fee|strictly\s+no\s+cancellation|no\s+double\s+booking)\b/i,
   /\b(?:safe|legit|trusted)\b.{0,20}\bsince\s+(?:19|20)\d{2}\b/i,
-  /\b(?:pm|dm|message)\s+or\s+(?:call|text)\b/i
+  /\b(?:pm|dm|message)\s+or\s+(?:call|text)\b/i,
+  /\b(?:take\s+advantage|mag[\s-]*rent\s+na\s+kayo)\b/i,
+  /\bready\s+ride\s+packages?\b|\brental\s+dates?\b/i,
+  /(?:₱|php|p)\s*[\d,]+\s*(?:only\s*)?(?:per|\/)\s*(?:\d+\s*)?(?:hours?|hrs?|days?|weeks?|months?)\b/i,
+  /\b(?:big|exclusive|special)\s+discount\b.{0,40}\bpromos?\b|\bber[\s-]*months?\s+promos?\b/i,
+  /\bflexible\s+(?:monthly\s+)?rentals?\b|\bflexible\s+rental\s+periods?\b/i,
+  /\bno\s+long[\s-]*term\s+(?:commitment|lease)\b/i,
+  /\b(?:naia|airport)\s+delivery\s+available\b/i,
+  /\b(?:expats?|ofws?|companies|employees|insurance\s+replacement)\b.{0,300}\b(?:expats?|ofws?|companies|employees|insurance\s+replacement)\b/i
 ]);
 
 const PHONE_NUMBER_PATTERN =
@@ -152,13 +160,19 @@ export function evaluateLeadEligibility(postText) {
     (text.match(SEATING_CAPACITY_PATTERN) ?? [])
       .map((value) => value.replace(/\D/g, ""))
   );
+  const promotionalHashtags = new Set(
+    (text.match(/#[a-z0-9_]+/gi) ?? [])
+      .map((value) => value.toLowerCase())
+  );
   const providerAdSignalCount = PROVIDER_AD_SIGNAL_PATTERNS
     .filter((pattern) => pattern.test(text))
     .length +
     Number(vehicleModels.size >= 2) +
     Number(phoneNumbers.size >= 2) +
     Number(seatingCapacities.size >= 2) +
-    Number(seatingCapacities.size >= 3);
+    Number(seatingCapacities.size >= 3) +
+    Number(promotionalHashtags.size >= 5) +
+    Number(promotionalHashtags.size >= 10);
   const providerSignalThreshold = hasExplicitBuyerIntent ? 4 : 2;
 
   if (

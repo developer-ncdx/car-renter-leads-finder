@@ -212,6 +212,62 @@ test("rejects the supplied provider advertisement", () => {
   });
 });
 
+test("rejects a promo-rate ad asking renters to message its Facebook page", () => {
+  const result = evaluateLeadEligibility(
+    [
+      "₱1500 lang ANYWHERE in Luzon??? Sulit na sulit",
+      "Mag-rent na kayo habang pasabog ang promo!",
+      "PM our FB page po.",
+      "CAR FOR RENT",
+      "SELF DRIVE",
+      "WITH DRIVER",
+      "RFID-READY",
+      "Promo rate is ₱1,500 per 24 hours ANYWHERE in Luzon.",
+      "Well-maintained unit",
+      "Ready Ride Package",
+      "Take advantage niyo na po ang promo while it’s still on.",
+      "PM our Facebook page to book your travel dates.",
+      "#carforrent #carrental #carrentalservice #selfdrive",
+      "#carforrentmontalban #montalbancarforrent"
+    ].join("\n")
+  );
+
+  assert.deepEqual(result, {
+    eligible: false,
+    reason: "provider_advertisement"
+  });
+});
+
+test("rejects a monthly-rental promotion framed as a renter question", () => {
+  const result = evaluateLeadEligibility(
+    [
+      "BIG DISCOUNT FOR BERMONTHS PROMO",
+      "Landing in Manila? Skip the Grab queues.",
+      "Your rental car can be delivered directly to NAIA.",
+      "Monthly Car Rental No Long-Term Commitment",
+      "Perfect for:",
+      "Expats staying in Manila for a few weeks or months",
+      "OFWs visiting the Philippines for an extended stay",
+      "Companies needing vehicles for employees",
+      "Employees on temporary assignments",
+      "Insurance replacement rentals",
+      "Flexible monthly rentals.",
+      "No need to commit to a long-term lease.",
+      "NAIA delivery available",
+      "Flexible rental periods",
+      "Need a car for a month — or just until you get your own back?",
+      "Ask about our monthly rental options today.",
+      "#carrental #rentacar #TaguigCarRental #selfdrive",
+      "#carrentalservice #CarRentalWithDriver"
+    ].join("\n")
+  );
+
+  assert.deepEqual(result, {
+    eligible: false,
+    reason: "provider_advertisement"
+  });
+});
+
 test("rejects a provider ad written with decorative Unicode text", () => {
   const result = evaluateLeadEligibility(
     [
@@ -426,6 +482,30 @@ test("allows buyer contact details without treating them as an ad", () => {
   assert.deepEqual(
     evaluateLeadEligibility(
       "LF Vios with professional driver tomorrow. Contact 0997 556 7447."
+    ),
+    {
+      eligible: true,
+      reason: "explicit_rental_buyer_intent"
+    }
+  );
+});
+
+test("allows a buyer to state a per-day budget", () => {
+  assert.deepEqual(
+    evaluateLeadEligibility(
+      "LF car tomorrow, budget ₱1,500 per day. Please message me."
+    ),
+    {
+      eligible: true,
+      reason: "explicit_rental_buyer_intent"
+    }
+  );
+});
+
+test("allows a buyer asking for a one-month rental", () => {
+  assert.deepEqual(
+    evaluateLeadEligibility(
+      "Need a car for one month starting October 1. Manila area po."
     ),
     {
       eligible: true,
