@@ -92,13 +92,14 @@ groups are migrated as **Car rental** during the upgrade.
    **Never put these sites to sleep** list.
 4. Reload the Notifications tab once after installing or updating the
    extension.
-5. Keep that Notifications tab open. Existing notifications become the
-   baseline; only links that appear afterward are handled.
+5. Keep that Notifications tab open. On startup, visible explicit new-post
+   notifications with a readable timestamp younger than 50 minutes are
+   checked. New notifications are then handled as they appear.
 
 Open the Notifications tab's DevTools Console and look for:
 
 ```text
-[Lead Notifications] Ready with 3 monitored groups. Existing notifications were used as the baseline.
+[Lead Notifications] Ready with 3 monitored groups. Fresh visible new-post notifications will be checked.
 ```
 
 When Facebook inserts an explicit new-post notification containing either a
@@ -181,13 +182,15 @@ Facebook Notifications content script
 After reloading that tab, the console should show:
 
 ```text
-[Lead Notifications] Ready with 3 monitored groups. Existing notifications were used as the baseline.
+[Lead Notifications] Ready with 3 monitored groups. Fresh visible new-post notifications will be checked.
 ```
 
 Have another account publish a fresh post in a monitored group. If Facebook
 adds a direct post link to the in-page notification list, the console reports
-that it opened the post for extraction. Existing notifications present before
-the `Ready` message are intentionally ignored.
+that it opened the post for extraction. Existing notifications are also
+checked when they are explicit new-post alerts with a verified timestamp under
+50 minutes; stale, comment, duplicate, and unverifiable startup items are
+ignored.
 
 For optional live-feed detection, open DevTools on a monitored group tab and
 filter for `Live Facebook Lead Observer`.
@@ -237,6 +240,8 @@ can resolve to the post.
 - Inspects every unseen post loaded in the page, regardless of its position,
   but only classifies posts verified to be less than 50 minutes old.
 - Reads timestamp evidence from permalink metadata and anonymous-post headers.
+- Isolates each notification row and uses its newest valid timestamp when
+  Facebook exposes conflicting hidden timestamp metadata.
 - Uses the arrival time of an explicit **new post** notification when the
   temporary Facebook post page omits its timestamp.
 - Extracts a notification-linked post without its own permalink only when the

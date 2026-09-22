@@ -2,16 +2,17 @@
   "use strict";
 
   const GroupConfig = globalThis.FbGroupConfig;
+  const NotificationUtils = globalThis.FbNotificationUtils;
 
-  if (!GroupConfig) {
+  if (!GroupConfig || !NotificationUtils) {
     console.error(
-      "[Lead Notifications] Group configuration failed to load."
+      "[Lead Notifications] Required extension modules failed to load."
     );
     return;
   }
 
   const CONFIG = Object.freeze({
-    storageKey: "processedNotificationPosts:v1",
+    storageKey: "processedNotificationPosts:v3",
     processedTtlMs: 7 * 24 * 60 * 60 * 1000,
     maxStoredPostIds: 3000,
     scanThrottleMs: 500,
@@ -34,28 +35,6 @@
     return candidate.postId
       ? `${candidate.groupId}:post:${candidate.postId}`
       : `${candidate.groupId}:notification:${candidate.notificationId}`;
-  }
-
-  function normalizeText(value) {
-    return String(value ?? "")
-      .replace(/\u00a0/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-  }
-
-  function notificationTextFor(anchor) {
-    const container = anchor.closest(
-      '[role="listitem"], [role="article"], li'
-    ) ?? anchor.parentElement;
-
-    return normalizeText(
-      container?.innerText || container?.textContent
-    ).slice(0, 1000);
-  }
-
-  function isNewPostNotificationText(value) {
-    return /\b(?:new (?:group )?(?:post|photo)|added (?:a )?new (?:post|photo)|posted (?:anonymously )?(?:in|to)|shared (?:a )?(?:new )?post (?:in|to)|has a new post|may bagong post|bagong post|ngayon sa|nag-post si|nagdagdag (?:si )?.*?\b(?:bagong post|bagong larawan))\b/i
-      .test(normalizeText(value));
   }
 
   function collectCandidates(root = document) {
@@ -100,16 +79,30 @@
         continue;
       }
 
-      const notificationText = notificationTextFor(anchor);
+      const observedAt = Date.now();
+      const metadata = NotificationUtils.notificationMetadataFor(
+        anchor,
+        observedAt
+      );
       const candidate = {
         ...parsed,
-        notificationText,
-        isNewPostNotification:
-          isNewPostNotificationText(notificationText),
-        detectedAt: new Date().toISOString()
+        notificationText: metadata.notificationText,
+        isNewPostNotification: metadata.isNewPostNotification,
+        notificationFreshnessStatus: metadata.freshness.status,
+        notificationAgeMs: metadata.freshness.ageMs,
+        detectedAt:
+          metadata.freshness.publishedAt ??
+          new Date(observedAt).toISOString()
       };
+      const key = postKey(candidate);
 
-      candidates.set(postKey(candidate), candidate);
+      candidates.set(
+        key,
+        NotificationUtils.selectBetterNotificationCandidate(
+          candidates.get(key),
+          candidate
+        )
+      );
     }
 
     return [...candidates.values()];
@@ -163,19 +156,30 @@
     persistProcessedPosts();
   }
 
-  async function forwardCandidate(candidate) {
+  async function forwardCandidate(candidate, { isStartup = false } = {}) {
     const key = postKey(candidate);
     const retryAt = retryNotBefore.get(key) ?? 0;
 
     if (
-      processedPosts.has(key) ||
       pendingPosts.has(key) ||
       retryAt > Date.now()
     ) {
       return;
     }
 
-    if (!monitoredGroupIds.has(candidate.groupId)) {
+    const decision = NotificationUtils.decideNotificationCandidate({
+      isProcessed: processedPosts.has(key),
+      isMonitored: monitoredGroupIds.has(candidate.groupId),
+      isNewPostNotification: candidate.isNewPostNotification,
+      freshnessStatus: candidate.notificationFreshnessStatus,
+      isStartup
+    });
+
+    if (decision === "duplicate") {
+      return;
+    }
+
+    if (decision === "unmonitored") {
       console.info(
         `${LOG_PREFIX} Ignored notification ${
           candidate.postId ?? candidate.notificationId
@@ -186,12 +190,35 @@
       return;
     }
 
-    if (!candidate.isNewPostNotification) {
+    if (decision === "not_new_post") {
       console.info(
         `${LOG_PREFIX} Ignored notification ${
           candidate.postId ?? candidate.notificationId
         }; it is not a new-post alert. Text: ` +
         `"${candidate.notificationText.slice(0, 180)}"`
+      );
+      markProcessed(key);
+      return;
+    }
+
+    if (decision === "stale") {
+      const ageMinutes = Number.isFinite(candidate.notificationAgeMs)
+        ? Math.floor(candidate.notificationAgeMs / 60_000)
+        : "at least 50";
+      console.info(
+        `${LOG_PREFIX} Ignored notification ${
+          candidate.postId ?? candidate.notificationId
+        }; it is ${ageMinutes} minutes old.`
+      );
+      markProcessed(key);
+      return;
+    }
+
+    if (decision === "startup_timestamp_unknown") {
+      console.info(
+        `${LOG_PREFIX} Ignored existing notification ${
+          candidate.postId ?? candidate.notificationId
+        }; its Facebook timestamp could not be verified.`
       );
       markProcessed(key);
       return;
@@ -235,9 +262,9 @@
     }
   }
 
-  function scanNotifications(root = document) {
+  function scanNotifications(root = document, options = {}) {
     for (const candidate of collectCandidates(root)) {
-      forwardCandidate(candidate);
+      forwardCandidate(candidate, options);
     }
   }
 
@@ -319,14 +346,6 @@
 
     updateMonitoredGroups(groups);
 
-    const baselineCandidates = collectCandidates();
-
-    for (const candidate of baselineCandidates) {
-      processedPosts.set(postKey(candidate), Date.now());
-    }
-
-    persistProcessedPosts();
-
     observer = new MutationObserver(() => {
       scheduleScan();
     });
@@ -344,9 +363,11 @@
 
     console.info(
       `${LOG_PREFIX} Ready with ${monitoredGroupIds.size} monitored ` +
-      `${monitoredGroupIds.size === 1 ? "group" : "groups"}. Existing ` +
-      "notifications were used as the baseline."
+      `${monitoredGroupIds.size === 1 ? "group" : "groups"}. Fresh visible ` +
+      "new-post notifications will be checked."
     );
+
+    scanNotifications(document, { isStartup: true });
   }
 
   chrome.storage.onChanged.addListener((changes, areaName) => {

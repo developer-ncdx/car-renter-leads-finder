@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Live Facebook Lead Observer",
-  "version": "0.10.2",
+  "version": "0.11.1",
   "description": "Monitors Facebook notifications and group tabs for qualified leads.",
   "permissions": [
     "alarms",
@@ -30,7 +30,12 @@
       "matches": [
         "https://www.facebook.com/notifications*"
       ],
-      "js": ["group-config.js", "notification-content.js"],
+      "js": [
+        "group-config.js",
+        "post-freshness.js",
+        "notification-utils.js",
+        "notification-content.js"
+      ],
       "run_at": "document_idle"
     }
   ]

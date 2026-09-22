@@ -1,6 +1,6 @@
 {
   "name": "fb-group-lead-sniper",
-  "version": "0.10.2",
+  "version": "0.11.1",
   "private": true,
   "type": "module",
   "description": "Local Facebook group observer and Telegram lead notifier.",
@@ -9,8 +9,8 @@
     "dev": "node --watch --env-file=.env.local server.js",
     "test:alert": "node --env-file=.env.local test-alert.js",
     "test:job-alert": "node --env-file=.env.local test-alert.js --job",
-    "test": "node --test dedupe.test.js eligibility.test.js job-eligibility.test.js group-config.test.js post-freshness.test.js",
-    "check": "node --check server.js && node --check dedupe.js && node --check dedupe.test.js && node --check eligibility.js && node --check eligibility.test.js && node --check job-eligibility.js && node --check job-eligibility.test.js && node --check group-config.js && node --check group-config.test.js && node --check post-freshness.js && node --check post-freshness.test.js && node --check background.js && node --check content.js && node --check notification-content.js && node --check popup.js && node --check test-alert.js && node --check ecosystem.config.cjs"
+    "test": "node --test dedupe.test.js eligibility.test.js job-eligibility.test.js group-config.test.js post-freshness.test.js notification-utils.test.js",
+    "check": "node --check server.js && node --check dedupe.js && node --check dedupe.test.js && node --check eligibility.js && node --check eligibility.test.js && node --check job-eligibility.js && node --check job-eligibility.test.js && node --check group-config.js && node --check group-config.test.js && node --check post-freshness.js && node --check post-freshness.test.js && node --check notification-utils.js && node --check notification-utils.test.js && node --check background.js && node --check content.js && node --check notification-content.js && node --check popup.js && node --check test-alert.js && node --check ecosystem.config.cjs"
   },
   "engines": {
     "node": ">=20.6.0"
