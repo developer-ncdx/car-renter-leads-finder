@@ -147,9 +147,10 @@ rejecting it immediately.
 
 Job groups accept genuine hiring, contract, and freelance posts for AI
 engineers, Bubble.io developers, software, web, frontend, backend, and
-full-stack developers, AI-agent or agentic developers, AI-assisted developers,
-AI specialists, and automation engineers or developers. Job-seeker posts,
-courses, and service advertisements are rejected. Short explicit captions
+full-stack developers, programmers, technical/software/engineering leads,
+lead developers, AI-agent or agentic developers, AI-assisted developers, AI
+specialists, and automation engineers or developers. Job-seeker posts, courses,
+and service advertisements are rejected. Short explicit captions
 such as `Looking for software engineer`, `Need AI engineer`, and
 `Hiring Bubble developer` are accepted directly after the job-seeker and
 service-ad guardrails pass.

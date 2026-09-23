@@ -113,7 +113,7 @@
 
   function processedStorageKey() {
     return activeLeadType === GroupConfig.GROUP_TYPES.JOB
-      ? `processedJobPosts:v5:${CONFIG.groupId}`
+      ? `processedJobPosts:v6:${CONFIG.groupId}`
       : `processedPosts:v8:${CONFIG.groupId}`;
   }
 

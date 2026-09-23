@@ -66,6 +66,7 @@ one of these roles:
 - Bubble.io developer or Bubble developer
 - software developer, software engineer, web developer, frontend developer,
   backend developer, or full-stack developer
+- programmer, technical lead, software or engineering lead, or lead developer
 - AI agent developer or AI agent engineer
 - agentic developer, engineer, or specialist
 - AI-assisted developer or engineer

@@ -20,7 +20,11 @@ test("accepts hiring posts for every configured job family", () => {
     "Seeking an AI-assisted developer for our internal tools.",
     "AI specialist vacancy, hybrid setup in Makati.",
     "Automation engineer wanted for a full-time position.",
-    "Need an automation dev for a freelance project."
+    "Need an automation dev for a freelance project.",
+    "Hiring a programmer for our product team.",
+    "Looking for a Technical Lead to join our engineering team.",
+    "Software Engineering Lead position available.",
+    "Lead Software Developer wanted for a remote role."
   ];
 
   for (const example of examples) {
@@ -73,6 +77,7 @@ test("rejects job seekers for target roles", () => {
     "AI engineer open to work. Here is my portfolio.",
     "Hire me as your Bubble developer.",
     "Automation developer available for work.",
+    "Programmer looking for work.",
     "Looking for clients as a software developer.",
     "Looking for software engineer job.",
     "Looking for a web developer job."
@@ -110,13 +115,23 @@ test("rejects courses and service advertisements", () => {
 });
 
 test("rejects unrelated jobs and role discussions", () => {
-  assert.deepEqual(
-    evaluateJobEligibility("We're hiring an accountant in Manila."),
-    {
-      eligible: false,
-      reason: "no_target_job_role"
-    }
-  );
+  const unrelatedJobs = [
+    "We're hiring an accountant in Manila.",
+    "Hiring a sales lead for our growth team.",
+    "Marketing lead wanted. Apply now.",
+    "Lead generation specialist position available."
+  ];
+
+  for (const example of unrelatedJobs) {
+    assert.deepEqual(
+      evaluateJobEligibility(example),
+      {
+        eligible: false,
+        reason: "no_target_job_role"
+      },
+      example
+    );
+  }
 
   assert.deepEqual(
     evaluateJobEligibility("What skills should an AI engineer learn?"),
